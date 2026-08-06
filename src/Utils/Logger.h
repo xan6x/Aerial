@@ -1,0 +1,53 @@
+#pragma once
+
+#include <cstdio>
+#include <format>
+#include <mutex>
+#include <string>
+#include <string_view>
+
+namespace aerial {
+
+enum class LogLevel { Trace, Debug, Info, Warn, Error };
+
+// Writes to an allocated console (when enabled) and to %LOCALAPPDATA%\AerialClient\latest.log.
+// Safe to call from any hooked thread; serialised internally.
+class Logger {
+public:
+    static Logger& get();
+
+    void init(bool allocConsole);
+    void shutdown();
+
+    void setLevel(LogLevel level) { m_level = level; }
+    LogLevel level() const { return m_level; }
+
+    void write(LogLevel level, std::string_view tag, std::string_view message);
+
+private:
+    Logger() = default;
+
+    std::mutex m_mutex;
+    FILE* m_file = nullptr;
+    FILE* m_console = nullptr;
+    bool m_ownsConsole = false;
+    LogLevel m_level = LogLevel::Debug;
+};
+
+namespace detail {
+template <typename... Args>
+inline void logf(LogLevel level, std::string_view tag, std::format_string<Args...> fmt, Args&&... args) {
+    if (level < Logger::get().level())
+        return;
+    Logger::get().write(level, tag, std::format(fmt, std::forward<Args>(args)...));
+}
+} // namespace detail
+
+} // namespace aerial
+
+// LOG_* take a tag so hook/module output stays greppable: LOG_INFO("KillAura", "target {}", id)
+#define LOG_TRACE(tag, ...) ::aerial::detail::logf(::aerial::LogLevel::Trace, tag, __VA_ARGS__)
+#define LOG_DEBUG(tag, ...) ::aerial::detail::logf(::aerial::LogLevel::Debug, tag, __VA_ARGS__)
+#define LOG_INFO(tag, ...)  ::aerial::detail::logf(::aerial::LogLevel::Info,  tag, __VA_ARGS__)
+#define LOG_WARN(tag, ...)  ::aerial::detail::logf(::aerial::LogLevel::Warn,  tag, __VA_ARGS__)
+#define LOG_ERROR(tag, ...) ::aerial::detail::logf(::aerial::LogLevel::Error, tag, __VA_ARGS__)

@@ -1,0 +1,15 @@
+# Build output
+build/
+out/
+.vs/
+*.user
+
+# Local-only: the IDA database and the reversing tooling built around it.
+# Neither is redistributable, and the dumps under tools/ are derived from the
+# game binary.
+ida/
+tools/
+
+.idea
+
+__pycache__/
