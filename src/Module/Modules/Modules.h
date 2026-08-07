@@ -28,6 +28,7 @@
 #include "Module/Modules/NoHurtCam.h"
 #include "Module/Modules/NoVSync.h"
 #include "Module/Modules/Notifications.h"
+#include "Module/Modules/Skybox.h"
 #include "Module/Modules/Watermark.h"
 
 // Misc

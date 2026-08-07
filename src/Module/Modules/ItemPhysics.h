@@ -21,12 +21,14 @@ protected:
 private:
     void onRender(Render2DEvent& event);
 
-    BoolSetting* m_flat;
     FloatSetting* m_spin;
+    IntSetting* m_thickness;
     FloatSetting* m_lift;
     FloatSetting* m_pivot;
+    BoolSetting* m_noShadow;
     BoolSetting* m_smooth;
     BoolSetting* m_preserve;
+    BoolSetting* m_flat;
 };
 
 } // namespace aerial::modules

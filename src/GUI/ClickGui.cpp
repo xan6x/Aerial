@@ -38,6 +38,22 @@ constexpr float kSettingHeight = 30.0f;
 constexpr float kRadius = 14.0f;
 constexpr float kCardRadius = 9.0f;
 
+// ── Opening ──────────────────────────────────────────────────────────────────
+// The window rides up into place from below rather than simply appearing. The
+// distance is in the same design units as the layout, so the travel is the same
+// proportion of the screen at any resolution and on either backend.
+//
+// Closing is quicker than opening on purpose: arriving is something to watch,
+// leaving is something to get out of the way.
+constexpr float kSlide = 58.0f;
+constexpr float kOpenSeconds = 0.24f;
+constexpr float kCloseSeconds = 0.15f;
+
+// How far behind the window its contents trail. Small - the rail and the cards
+// are meant to settle just after the panel lands, not to arrive separately.
+constexpr float kContentSlide = 22.0f;
+constexpr float kContentDelay = 0.18f;   // fraction of the transition
+
 const Category kCategories[] = {Category::Combat, Category::Movement, Category::Player,
                                 Category::World,  Category::Render,   Category::Misc};
 
@@ -95,9 +111,19 @@ bool matchesSearch(const Module& module, const std::string& query) {
 }
 
 // Ease-out cubic: fast start, soft landing. Used for the open transition.
+//
+// It is applied to a linear 0..1 timeline rather than to an exponential
+// smoother, which is what the open used to be. Exponential smoothing never
+// actually reaches its target, so the last stretch of the movement was too slow
+// to see and the menu read as a fade instead of as something arriving.
 float easeOut(float t) {
     const float inverted = 1.0f - t;
     return 1.0f - inverted * inverted * inverted;
+}
+
+// The same timeline, started late and still finishing on time.
+float delayed(float t, float delay) {
+    return std::clamp((t - delay) / std::max(0.01f, 1.0f - delay), 0.0f, 1.0f);
 }
 
 } // namespace
@@ -132,11 +158,12 @@ ClickGui::ScrollState& ClickGui::activeScroll() {
 
 void ClickGui::open() {
     m_open = true;
-    m_openAnimation.set(1.0f);
 
-    // The menu owns the wheel while it is up; without this a scroll through the
-    // module list also swaps the held item.
-    input::InputManager::get().setSwallowWheel(true);
+    // The menu owns the keyboard and the mouse while it is up. Cancelling our
+    // own events is not enough - the game reads the same devices from its own
+    // message queue, so without this a click on a card also swung the arm and
+    // Escape opened the pause screen behind the menu.
+    input::InputManager::get().setSwallowInput(true);
 
     auto& context = sdk::Context::get();
     if (!context.inGame())
@@ -150,7 +177,6 @@ void ClickGui::open() {
 
 void ClickGui::close() {
     m_open = false;
-    m_openAnimation.set(0.0f);
     m_draggingSlider = nullptr;
     m_bindingModule = nullptr;
     m_editingName = false;
@@ -158,7 +184,7 @@ void ClickGui::close() {
     m_search.clear();
 
     input::InputManager::get().setCapture(false);
-    input::InputManager::get().setSwallowWheel(false);
+    input::InputManager::get().setSwallowInput(false);
 
     // Restore the cursor if - and only if - we were the ones who released it.
     // Gating this on inGame() the way open() does was a bug: open in a world and
@@ -184,7 +210,7 @@ int ClickGui::activeCharacter() const {
     return choice->is("Asuka") ? AERIAL_ASSET_ASUKA : AERIAL_ASSET_AYANAMI;
 }
 
-ClickGui::Layout ClickGui::computeLayout(const Vec2& screenSize) const {
+ClickGui::Layout ClickGui::computeLayout(const Vec2& screenSize, float amount) const {
     Layout layout;
     layout.scale = DrawUtils::uiScale();
 
@@ -195,7 +221,11 @@ ClickGui::Layout ClickGui::computeLayout(const Vec2& screenSize) const {
     const float width = kWindowWidth * layout.scale;
     const float height = kWindowHeight * layout.scale;
     const float left = (screenSize.x - width) * 0.5f;
-    const float top = (screenSize.y - height) * 0.5f;
+
+    // The whole layout moves together, hit areas included, so a click during
+    // the transition still lands on what is drawn under the cursor.
+    const float top =
+        (screenSize.y - height) * 0.5f + (1.0f - amount) * kSlide * layout.scale;
 
     layout.window = {left, top, left + width, top + height};
     layout.header = {left, top, left + width, top + kHeaderHeight * layout.scale};
@@ -210,7 +240,10 @@ ClickGui::Layout ClickGui::computeLayout(const Vec2& screenSize) const {
 }
 
 void ClickGui::render(Render2DEvent& event) {
-    const float raw = m_openAnimation.update(Theme::get().animationSpeed);
+    // A fixed-length timeline rather than a per-frame lerp, so the menu takes
+    // the same quarter of a second to arrive whatever the framerate is.
+    const float step = frameDelta() / (m_open ? kOpenSeconds : kCloseSeconds);
+    m_transition = std::clamp(m_transition + (m_open ? step : -step), 0.0f, 1.0f);
 
     // Safety net for the cursor: whatever route the menu took to close, the
     // game must not be left in its released state - that is what hides the
@@ -222,16 +255,25 @@ void ClickGui::render(Render2DEvent& event) {
         }
     }
 
-    if (!m_open && raw <= 0.005f)
+    if (!m_open && m_transition <= 0.0f) {
+        // Nothing is on screen, so nothing may answer a click either. Leaving
+        // the last frame's rectangles behind is how a closed menu could still
+        // be clicked on through the game.
+        m_hits.clear();
         return;
+    }
 
-    const float amount = easeOut(std::clamp(raw, 0.0f, 1.0f));
+    // Running the same ease backwards is what makes the close start gently and
+    // then drop away, which is the right shape for leaving.
+    const float amount = easeOut(m_transition);
+    const float contents = easeOut(delayed(m_transition, kContentDelay));
 
     m_cursor = input::InputManager::get().cursor();
     m_tooltip.clear();
     m_hits.clear();
 
-    const Layout layout = computeLayout(event.screenSize);
+    const Layout layout = computeLayout(event.screenSize, amount);
+    m_contentSlide = (1.0f - contents) * kContentSlide * layout.scale;
 
     // Scrim over the world, so the menu reads as a focused surface.
     DrawUtils::fill({0.0f, 0.0f, event.screenSize.x, event.screenSize.y},
@@ -462,7 +504,7 @@ void ClickGui::renderRail(const Layout& layout, float amount) {
                      layout.rail.right + 0.5f * scale, layout.rail.bottom - 10.0f * scale},
                     Colour::rgb(0xFFFFFF, 0.06f * amount));
 
-    float y = layout.rail.top + kPadding * scale;
+    float y = layout.rail.top + kPadding * scale + m_contentSlide;
     const float itemHeight = kRailItemHeight * scale;
 
     for (Category category : kCategories) {
@@ -568,7 +610,7 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
     const float scrolled = m_moduleScroll.position.update(theme.animationSpeed);
 
     const float top = layout.content.top + kPadding * scale;
-    float y = top - scrolled;
+    float y = top - scrolled + m_contentSlide;
     int index = 0;
 
     // Give the scrollbar its own gutter once there is one, so the thumb never
@@ -637,7 +679,10 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
         y = group.bottom + kCardGap * scale;
     }
 
-    const float contentHeight = (y + scrolled) - top + kPadding * scale;
+    // The opening slide is a drawing offset, not content: measuring the list
+    // with it still applied would make the scroll extent grow and shrink as the
+    // menu arrives.
+    const float contentHeight = (y + scrolled - m_contentSlide) - top + kPadding * scale;
     m_moduleScroll.max = std::max(0.0f, contentHeight - layout.content.height());
 
     renderScrollbar(layout.content, m_moduleScroll, contentHeight, scale, amount);
@@ -903,7 +948,7 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
     const float right = layout.cardsRight - kPadding * 1.4f * scale -
                         (m_configScroll.max > 0.5f ? 9.0f * scale : 0.0f);
     const float top = layout.content.top + kPadding * scale;
-    float y = top - scrolled;
+    float y = top - scrolled + m_contentSlide;
 
     // ── New config ───────────────────────────────────────────────────────────
     const float rowHeight = 36.0f * scale;
@@ -1023,7 +1068,7 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
         y = card.bottom + kCardGap * scale;
     }
 
-    const float contentHeight = (y + scrolled) - top + kPadding * scale;
+    const float contentHeight = (y + scrolled - m_contentSlide) - top + kPadding * scale;
     m_configScroll.max = std::max(0.0f, contentHeight - layout.content.height());
 
     renderScrollbar(layout.content, m_configScroll, contentHeight, scale, amount);

@@ -45,10 +45,15 @@ Detour<void(__fastcall*)(void*, void*)> g_moveInputTick;
 // prologue - see the item physics section below.
 Detour<void(__fastcall*)(void*, void*, void*, float, float)> g_itemRender;
 Detour<void(__fastcall*)(void*, float, float, float, float)> g_matrixRotate;
+Detour<float(__fastcall*)(void*)> g_getShadowRadius;
+Detour<void(__fastcall*)(void*, float, float)> g_renderSky;
 // (this, events*) - the second argument is only visible at the call site, not
 // in the prologue. Declaring one argument here handed the original a garbage
 // RDX and crashed the game on the first frame.
 Detour<void(__fastcall*)(void*, void*)> g_processEvents;
+// (this, ButtonEvent*, char state, void* a4). Four arguments, read off the one
+// call site inside InputHandler::tick - the prologue alone stops at three.
+Detour<void(__fastcall*)(void*, void*, char, void*)> g_handleButtonEvent;
 
 // Captured from its own hook so the movement state can also be cleared from the
 // player tick, which does not always run after MoveInputHandler::tick.
@@ -113,6 +118,11 @@ std::atomic<bool> g_itemSmooth{true};
 std::atomic<bool> g_itemPreserve{false};
 std::atomic<bool> g_itemFlat{false};
 std::atomic<int> g_itemThickness{1};
+std::atomic<bool> g_itemNoShadow{false};
+
+// Renderer id of a dropped item, learned the first time one is drawn. -1 until
+// then, which is why the shadow hook does nothing before any item has appeared.
+std::atomic<int> g_itemRendererId{-1};
 
 // Which extrusion pass is being drawn. A flat sprite is invisible edge-on and
 // nearly invisible against the ground, so the item is drawn several times a
@@ -145,6 +155,8 @@ std::unordered_map<const void*, ItemSpin> g_itemSpins;
 // Defined with the rest of the item physics, further down; the frame hook above
 // it is what drives the sweep.
 void sweepItemSpins(float now);
+
+std::atomic<bool> g_skybox{false};
 
 std::atomic<bool> g_fogEnabled{false};
 std::atomic<float> g_fogRed{1.0f};
@@ -180,6 +192,11 @@ void dispatchOverlay() {
 
     t_drawingOverlay = true;
     g_overlays.fetch_add(1, std::memory_order_relaxed);
+
+    // The single per-drawn-frame marker, whichever backend is in use: both
+    // routes into here draw exactly one frame. Everything animated measures
+    // itself against the gap this records.
+    gui::advanceFrame();
 
     render::DrawUtils::beginFrame();
     guarded("Render2DEvent", [] {
@@ -353,6 +370,36 @@ void __fastcall onProcessEvents(void* self, void* events) {
     if (gui::ClickGui::get().isOpen())
         return;
     g_processEvents.call(self, events);
+}
+
+// ── InputHandler::_handleButtonEvent ─────────────────────────────────────────
+//
+// Where the menu actually takes the game's input away, and the only place that
+// can be done properly.
+//
+// Everything tried before this was downstream of the problem. Cancelling our
+// own events only stops our handlers. Nulling the messages in the queue assumed
+// the game reads its input from that queue, and a CoreWindow does not have to -
+// it clearly does not here, since clicks kept reaching the world through it.
+// Releasing the cursor and skipping tickBuildAction stopped a hold from being
+// carried forward but not the press that started one.
+//
+// This is the game's own dispatcher: InputHandler::tick decodes a device record
+// and calls this for every button, whatever device it came from and however it
+// reached the process. Nothing that a button does in Minecraft - swinging,
+// placing, walking, the hotbar, the inventory, chat, pause - happens without
+// going through here first.
+//
+// Presses are dropped and releases are not. A button held when the menu opened
+// was already seen going down, so its release has to land or the game keeps
+// acting on it: that is the difference between the menu pausing an input and
+// the player mining forever after closing it.
+void __fastcall onHandleButtonEvent(void* self, void* event, char state, void* a4) {
+    if (gui::ClickGui::get().isOpen() && memory::isReadable(event, 3) &&
+        static_cast<const uint8_t*>(event)[2] == 1)
+        return;
+
+    g_handleButtonEvent.call(self, event, state, a4);
 }
 
 // ── ClientInstance::tickBuildAction ──────────────────────────────────────────
@@ -600,12 +647,38 @@ void __fastcall onMatrixRotate(void* matrix, float angle, float x, float y, floa
     g_matrixRotate.call(matrix, angle, x, y, z);
 }
 
+// ── Entity::getShadowRadius ──────────────────────────────────────────────────
+// A blob shadow under a thin item that is itself lying on the ground reads as a
+// smear of dirt, and it is drawn after ItemRenderer::render has returned, so it
+// cannot be suppressed from there. Zero radius is the game's own way of saying
+// "no shadow", so that is what dropped items are told to have.
+float __fastcall onGetShadowRadius(void* self) {
+    if (g_itemPhysics.load(std::memory_order_relaxed) &&
+        g_itemNoShadow.load(std::memory_order_relaxed) && self) {
+        const int itemId = g_itemRendererId.load(std::memory_order_relaxed);
+        if (itemId >= 0 && memory::isReadable(self, offsets::field::entity::rendererId + 4) &&
+            *reinterpret_cast<const int*>(static_cast<const uint8_t*>(self) +
+                                          offsets::field::entity::rendererId) == itemId)
+            return 0.0f;
+    }
+
+    return g_getShadowRadius.call(self);
+}
+
 // ── ItemRenderer::render ─────────────────────────────────────────────────────
 // Records which actor the translate belongs to, and switches off the game's own
 // bob for the duration of the call.
 void __fastcall onItemRender(void* self, void* actor, void* pos, float a4, float partialTicks) {
     void* const previous = t_itemActor;
     t_itemActor = actor;
+
+    // Learned here rather than hard-coded: the id is a table index, and this is
+    // the one place it is known for certain to belong to a dropped item.
+    if (actor && memory::isReadable(actor, offsets::field::entity::rendererId + 4)) {
+        g_itemRendererId.store(*reinterpret_cast<const int*>(static_cast<const uint8_t*>(actor) +
+                                                             offsets::field::entity::rendererId),
+                               std::memory_order_relaxed);
+    }
 
     // The bob is added to Y before the translate we hook, so it cannot be undone
     // afterwards - by then it is indistinguishable from the item's real height.
@@ -680,6 +753,54 @@ void __fastcall onMatrixTranslate(void* matrix, float x, float y, float z) {
         return;
 
     applyItemRotation(static_cast<float*>(matrix), actor);
+}
+
+// ── LevelRendererCamera::renderSky ───────────────────────────────────────────
+// The Skybox module patches the dimension branch so the End's textured cube is
+// what gets drawn everywhere. Two things that patch cannot express are done
+// here instead.
+//
+// First the tint. The cube is drawn in the fog colour doubled, which in the End
+// is near-black and gives that dim purple sky. In the overworld the fog colour
+// is the biome's, so the texture would be stained by it and go dark at night.
+// Feeding the renderer 0.5 makes the doubling land on exactly white, and the
+// texture shows as it was authored.
+//
+// Then the sky. The End branch returns before the sun, moon and stars, so they
+// are re-issued afterwards, with the arguments taken from the pair renderSky
+// itself passes on - which are not in the order the signatures suggest.
+void __fastcall onRenderSky(void* self, float a, float b) {
+    if (!g_skybox.load(std::memory_order_relaxed)) {
+        g_renderSky.call(self, a, b);
+        return;
+    }
+
+    constexpr ptrdiff_t kOffset = offsets::field::levelRendererCamera::fogColour;
+    float* colour = nullptr;
+    float saved[4]{};
+
+    if (memory::isReadable(self, kOffset + sizeof(float) * 4)) {
+        colour = reinterpret_cast<float*>(static_cast<uint8_t*>(self) + kOffset);
+        for (int i = 0; i < 4; ++i) {
+            saved[i] = colour[i];
+            colour[i] = 0.5f;
+        }
+    }
+
+    g_renderSky.call(self, a, b);
+
+    if (colour)
+        for (int i = 0; i < 4; ++i)
+            colour[i] = saved[i];
+
+    using SunOrMoon = void(__fastcall*)(void*, float, bool);
+    using Stars = void(__fastcall*)(void*, float, float);
+    auto sunOrMoon = reinterpret_cast<SunOrMoon>(memory::rva(func::LevelRendererCamera_renderSunOrMoon));
+    auto stars = reinterpret_cast<Stars>(memory::rva(func::LevelRendererCamera_renderStars));
+
+    sunOrMoon(self, b, true);
+    sunOrMoon(self, b, false);
+    stars(self, b, a);
 }
 
 // ── LevelRendererCamera::setupFog ────────────────────────────────────────────
@@ -787,11 +908,12 @@ void setFovScale(bool enabled, float scale) {
 }
 
 void setItemPhysics(bool enabled, float spin, float lift, float pivot, int thickness, bool smooth,
-                    bool preserve, bool flat) {
+                    bool preserve, bool flat, bool noShadow) {
     g_itemSpin.store(spin, std::memory_order_relaxed);
     g_itemLift.store(lift, std::memory_order_relaxed);
     g_itemPivot.store(pivot, std::memory_order_relaxed);
     g_itemThickness.store(thickness, std::memory_order_relaxed);
+    g_itemNoShadow.store(noShadow, std::memory_order_relaxed);
     g_itemSmooth.store(smooth, std::memory_order_relaxed);
     g_itemPreserve.store(preserve, std::memory_order_relaxed);
     g_itemFlat.store(flat, std::memory_order_relaxed);
@@ -802,6 +924,8 @@ void setItemPhysics(bool enabled, float spin, float lift, float pivot, int thick
         g_itemSpins.clear();
     }
 }
+
+void setSkybox(bool enabled) { g_skybox.store(enabled, std::memory_order_relaxed); }
 
 void setFogColour(bool enabled, float red, float green, float blue) {
     g_fogRed.store(red, std::memory_order_relaxed);
@@ -844,8 +968,13 @@ bool installAll() {
                            &onMoveInputTick);
     g_processEvents.attach("ScreenView::_processEvents",
                            memory::rva(func::ScreenView_processEvents), &onProcessEvents);
+    g_handleButtonEvent.attach("InputHandler::_handleButtonEvent",
+                               memory::rva(func::InputHandler_handleButtonEvent),
+                               &onHandleButtonEvent);
     g_getFloatOption.attach("Options::getFloat", memory::rva(func::Options_getFloat),
                             &onGetFloatOption);
+    g_renderSky.attach("LevelRendererCamera::renderSky",
+                       memory::rva(func::LevelRendererCamera_renderSky), &onRenderSky);
     g_setupFog.attach("LevelRendererCamera::setupFog",
                       memory::rva(func::LevelRendererCamera_setupFog), &onSetupFog);
     g_matrixTranslate.attach("Matrix::translate", memory::rva(func::Matrix_translate),
@@ -853,6 +982,8 @@ bool installAll() {
     g_itemRender.attach("ItemRenderer::render", memory::rva(func::ItemRenderer_render),
                         &onItemRender);
     g_matrixRotate.attach("Matrix::rotate", memory::rva(func::Matrix_rotate), &onMatrixRotate);
+    g_getShadowRadius.attach("Entity::getShadowRadius", memory::rva(func::Entity_getShadowRadius),
+                             &onGetShadowRadius);
     g_getGamma.attach("Options::getGamma", memory::rva(func::Options_getGamma), &onGetGamma);
     g_getFov.attach("LevelRendererPlayer::getFov", memory::rva(func::LevelRendererPlayer_getFov),
                     &onGetFov);

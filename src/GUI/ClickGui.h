@@ -47,7 +47,10 @@ private:
     // Resource id of the selected artwork, 0 when none.
     int activeCharacter() const;
 
-    Layout computeLayout(const Vec2& screenSize) const;
+    // `amount` is the eased open progress: at 0 the window sits below its
+    // resting place, at 1 it is home. The offset is baked into the layout
+    // rather than into the drawing so hit areas travel with what is drawn.
+    Layout computeLayout(const Vec2& screenSize, float amount) const;
 
     // Artwork behind the cards, anchored to the bottom-right of the content
     // area and clipped by the window's rounded corners.
@@ -146,7 +149,14 @@ private:
     Rect m_draggingSliderRect;
     Module* m_bindingModule = nullptr;
 
-    Animated m_openAnimation{0.0f};
+    // Linear 0..1 open progress, advanced by wall time and eased at the point
+    // of use. A smoother was the wrong tool: it never reaches its target, so
+    // the movement always petered out instead of landing.
+    float m_transition = 0.0f;
+
+    // How far the rail and the list still trail the window, in pixels.
+    float m_contentSlide = 0.0f;
+
     std::string m_tooltip;
 
     bool m_open = false;

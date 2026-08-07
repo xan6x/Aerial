@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "Utils/Math.h"
 
 namespace aerial::gui {
@@ -41,7 +43,24 @@ struct Theme {
     Colour menuAccent(int index = 0) const;
 };
 
+// Seconds since the client started; drives rainbow and animations.
+float clockSeconds();
+
+// Called once per drawn frame, before anything animates. Everything below is
+// measured against it.
+void advanceFrame();
+
+// Length of the frame being drawn, in seconds. Clamped: a stall while a world
+// loads must not make every animation jump to its target in one step.
+float frameDelta();
+
 // Simple exponential-smoothing animator for GUI values.
+//
+// `speed` is the fraction of the remaining distance covered in one frame *at
+// 60 fps*, and the frame length converts it. Applying it per frame unchanged -
+// which is what this used to do - meant every animation in the client ran four
+// times faster on a 240 Hz display than on a 60 Hz one, and slowed to a crawl
+// whenever the framerate dipped.
 class Animated {
 public:
     Animated() = default;
@@ -51,7 +70,13 @@ public:
     float target() const { return m_target; }
 
     float update(float speed) {
-        m_value += (m_target - m_value) * speed;
+        if (speed >= 1.0f) {
+            m_value = m_target;
+            return m_value;
+        }
+        if (speed > 0.0f)
+            m_value += (m_target - m_value) * (1.0f - std::pow(1.0f - speed, frameDelta() * 60.0f));
+
         if (std::fabs(m_target - m_value) < 0.001f)
             m_value = m_target;
         return m_value;
@@ -63,8 +88,5 @@ private:
     float m_value = 0.0f;
     float m_target = 0.0f;
 };
-
-// Seconds since the client started; drives rainbow and animations.
-float clockSeconds();
 
 } // namespace aerial::gui

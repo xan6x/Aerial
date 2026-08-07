@@ -37,6 +37,7 @@ void ModuleManager::registerAll() {
     add<modules::NoHurtCam>();
     add<modules::Notifications>();
     add<modules::NoVSync>();
+    add<modules::Skybox>();
     add<modules::Watermark>();
 
     // Misc

@@ -155,6 +155,21 @@ inline constexpr uintptr_t MoveInputHandler_tick        = 0x443DC0;
 // in the MoveInputHandler::tick hook instead.
 inline constexpr uintptr_t MoveInputHandler_clearState  = 0x444050;
 inline constexpr uintptr_t InputHandler_tick            = 0x7147D0;
+
+// InputHandler::_handleButtonEvent(this, ButtonEvent*, char state, void* a4).
+//
+// Every mapped button in the game funnels through here - mouse buttons, WASD,
+// jump, the hotbar, the inventory, chat, pause. InputHandler::tick decodes a
+// device record into one of seven event kinds through a jump table at 0x714F64
+// and this is kind 0, the button one; the other six carry axes and text.
+//
+// The event record is `uint16 button; uint8 pressed;`. That last byte is what
+// picks which of the two handler maps runs, +0x20 or +0x30, and which is which
+// is settled by MoveInputHandler::_registerButtonStateTracking: it registers
+// "set the flag to 1" into +0x20 and "set it to 0" into +0x30. So byte 2 is 1
+// on the way down and 0 on the way up.
+inline constexpr uintptr_t InputHandler_handleButtonEvent = 0x715C40;
+
 inline constexpr uintptr_t MinecraftInputHandler_updateInputMode = 0x41F250;
 inline constexpr uintptr_t ClientInputCallbacks_handleBuildOrAttackButtonPress = 0x42A520;
 inline constexpr uintptr_t ClientInputCallbacks_handleInteractButtonPress      = 0x42A4C0;
@@ -194,6 +209,12 @@ inline constexpr uintptr_t ItemRenderer_translateReturn = 0x56FE83;
 // at [rsp+0x20]. Both call sites below set it up identically.
 inline constexpr uintptr_t Matrix_rotate               = 0x180010;
 
+// float(Entity*), whose whole body is `movss xmm0, [rcx+0x198]; ret`. It is
+// called through the vtable, so returning zero from it is how an entity is told
+// to cast no shadow - the same switch the game uses for entities that never had
+// one.
+inline constexpr uintptr_t Entity_getShadowRadius      = 0x9C72D0;
+
 // ItemRenderer::render turns the item twice after the translate we hook, which
 // is why our own orientation was being overridden:
 //   0x570319 rotates about Y by an angle derived from a direction vector - the
@@ -202,6 +223,34 @@ inline constexpr uintptr_t Matrix_rotate               = 0x180010;
 // These are the return addresses, which is how each call is identified.
 inline constexpr uintptr_t ItemRenderer_billboardReturn = 0x57031E;
 inline constexpr uintptr_t ItemRenderer_spinReturn      = 0x5704FA;
+
+// ── Sky ──────────────────────────────────────────────────────────────────────
+// LevelRendererCamera::renderSky(this, a, b). Its one call site in renderLevel
+// sets rcx, xmm1 and xmm2, so three arguments is the whole of it.
+//
+// The function is two unrelated renderers behind one branch at 0x5ACF29:
+//
+//   cmp dword [dimension+0x12C], 2   ; 2 = The End
+//   jne <procedural sky>             ; 0x5ACF30, six bytes
+//
+// The End side draws a textured cube - a real skybox, which is why dropping an
+// end_sky into a pack works there. The other side draws an untextured gradient
+// mesh plus the sun, moon and stars, and has no texture to replace. Turning the
+// branch round is the whole trick; the cube's mesh, material and texture are
+// all built unconditionally (LevelRenderer::createMeshes at 0x5A9680 and the
+// constructor at 0x5A81FD), not on entering the End, so they are live in every
+// dimension.
+inline constexpr uintptr_t LevelRendererCamera_renderSky = 0x5ACE40;
+
+// Both are called from the procedural side of that branch, which the skybox
+// path never reaches - so the client calls them itself afterwards to put the
+// sun, moon and stars back over the cube.
+//
+// Careful with the floats: renderSky keeps its two arguments in xmm7 and xmm6
+// respectively, and passes *xmm6* - its second argument - as the first float of
+// both. renderStars then takes the first argument as its second.
+inline constexpr uintptr_t LevelRendererCamera_renderSunOrMoon = 0x5AD330;
+inline constexpr uintptr_t LevelRendererCamera_renderStars     = 0x5AD1D0;
 
 // LevelRendererCamera::setupFog computes the fog colour from the biome's RGBA
 // at [biome+0xD0], scales it by brightness and stores it to [this+0x3C8].
@@ -380,6 +429,13 @@ inline constexpr ptrdiff_t rotOld        = 0xC0;   // Vec2
 // matching load writes the result straight back to it, so both directions name
 // the same field.
 inline constexpr ptrdiff_t onGround      = 0x12E;  // bool, verified
+
+// Index into EntityRenderDispatcher's renderer table: it reads this, then picks
+// the renderer as [dispatcher + id*8 + 0x50]. Comparing it against the id an
+// item was drawn with is how a later call - the shadow pass, which runs after
+// ItemRenderer::render has returned - can tell it is looking at a dropped item.
+inline constexpr ptrdiff_t rendererId    = 0x14C;  // int
+inline constexpr ptrdiff_t shadowRadius  = 0x198;  // float, returned by getShadowRadius
 inline constexpr ptrdiff_t flags         = 0xEC;   // bitfield read by GameMode::attack
 inline constexpr ptrdiff_t entityData    = 0xF0;   // vector<EntityDataItem*> begin/end
 inline constexpr ptrdiff_t bodyHeight    = 0x19C;  // scaled by getEyeHeight

@@ -36,17 +36,19 @@ public:
     void setCapture(bool capture) { m_captured = capture; }
     bool captured() const { return m_captured; }
 
-    // The wheel is not key state, so GetAsyncKeyState cannot see it. It is read
-    // from the game thread's own message queue instead; see InputManager.cpp.
+    // A filter on the game's own message queue, for the two things key state
+    // cannot do: seeing the wheel, which is a message rather than a state, and
+    // taking input away from the game. See InputManager.cpp.
     // Both are safe to call repeatedly.
-    void installWheelHook();
-    void removeWheelHook();
-    bool wheelHooked() const;
+    void installMessageHook();
+    void removeMessageHook();
+    bool messageHooked() const;
 
-    // Drops wheel messages before the game gets them. The open menu wants the
-    // wheel for its own list, and letting it through swaps the held item at the
-    // same time.
-    void setSwallowWheel(bool swallow);
+    // Stops the game seeing keyboard and mouse input at all - the menu owns
+    // both while it is up. Without this a click on a card also swung the arm,
+    // Escape opened the pause screen behind the menu and the wheel swapped the
+    // held item while scrolling the module list.
+    void setSwallowInput(bool swallow);
 
     static bool gameFocused();
     static const char* keyName(int virtualKey);

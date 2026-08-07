@@ -16,9 +16,32 @@ namespace aerial {
 namespace {
 
 // Bump whenever a default that users cannot easily notice changes - keybinds,
-// mostly. An older file is ignored rather than merged, so a changed default
-// actually takes effect instead of being silently overwritten by stale state.
-constexpr int kConfigVersion = 2;
+// mostly - and add a row to the table below saying what moved. An older file is
+// still read; only the settings named there are skipped, so the new default
+// takes effect without the rest of someone's config being thrown away for it.
+//
+// That is a change from how this worked: the whole file used to be rejected on
+// any version mismatch, which meant one moved keybind reset every module, every
+// slider and every colour the player had set.
+constexpr int kConfigVersion = 3;
+
+struct DefaultChange {
+    const char* module;
+    const char* setting;
+    int version;   // the version the new default arrived in
+};
+
+constexpr DefaultChange kDefaultChanges[] = {
+    {"ClickGui", "Keybind", 3},   // back to Insert
+};
+
+bool supersededDefault(const std::string& module, const std::string& setting, int fileVersion) {
+    for (const DefaultChange& change : kDefaultChanges) {
+        if (fileVersion < change.version && module == change.module && setting == change.setting)
+            return true;
+    }
+    return false;
+}
 
 json serialise(const Setting& setting) {
     switch (setting.type()) {
@@ -257,11 +280,17 @@ bool Config::load(const std::string& requested) {
     }
 
     const int version = root.value("version", 0);
-    if (version != kConfigVersion) {
-        LOG_WARN("Config", "{} was written by an older build (version {}, expected {}); "
-                           "ignoring it so new defaults apply",
+    if (version <= 0 || version > kConfigVersion) {
+        // Either not ours or written by a build newer than this one, where a
+        // setting could mean something this code does not know about.
+        LOG_WARN("Config", "{} declares version {}, which this build cannot read (expected 1..{})",
                  path.string(), version, kConfigVersion);
         return false;
+    }
+    if (version < kConfigVersion) {
+        LOG_INFO("Config", "{} is version {}; reading it and taking the new defaults for anything "
+                           "that moved since",
+                 path.string(), version);
     }
 
     const auto modules = root.find("modules");
@@ -276,6 +305,9 @@ bool Config::load(const std::string& requested) {
         const auto settings = entry->find("settings");
         if (settings != entry->end()) {
             for (const auto& setting : module->settings()) {
+                if (supersededDefault(module->name(), setting->name(), version))
+                    continue;
+
                 const auto value = settings->find(setting->name());
                 if (value != settings->end())
                     deserialise(*setting, *value);

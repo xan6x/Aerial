@@ -29,10 +29,11 @@ float easeOut(float t) {
     return 1.0f - inverted * inverted * inverted;
 }
 
-std::string labelFor(const Module& module) {
-    const std::string tag = module.suffix();
-    return tag.empty() ? module.name() : module.name() + " " + tag;
-}
+// Just the name. Modules use suffix() to explain themselves - "no sky in
+// pack", "unavailable" - and that belongs in the menu, where it is an answer to
+// something the player just did. On the HUD it is a caption nobody asked for
+// sitting over the game.
+const std::string& labelFor(const Module& module) { return module.name(); }
 
 } // namespace
 

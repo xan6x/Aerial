@@ -45,14 +45,24 @@ void setFovScale(bool enabled, float scale);
 // staying camera-facing sprites. Which item is which comes from hooking
 // ItemRenderer::render for the actor pointer; the orientation itself is applied
 // in Matrix::translate.
-//   spin     - degrees per second while airborne
-//   lift     - world-space height offset, non-block items only
-//   pivot    - shift along the item's own axis after rotation, 0 for none
-//   smooth   - ease into the resting angle rather than snapping to it
-//   preserve - keep whatever angle the item landed at
-//   flat     - never animate; draw every item resting, from the moment it drops
-void setItemPhysics(bool enabled, float spin, float lift, float pivot, bool smooth, bool preserve,
-                    bool flat);
+//   spin      - degrees per second while airborne
+//   lift      - world-space height offset, non-block items only
+//   pivot     - shift along the item's own axis after rotation, 0 for none
+//   thickness - how many times to redraw the item, each a hair higher than the
+//               last, so a flat sprite reads as a slab instead of a decal
+//   smooth    - ease into the resting angle rather than snapping to it
+//   preserve  - keep whatever angle the item landed at
+//   flat      - never animate; draw every item resting, from the moment it drops
+//   noShadow  - drop the blob shadow, which an item lying on the ground sits in
+void setItemPhysics(bool enabled, float spin, float lift, float pivot, int thickness, bool smooth,
+                    bool preserve, bool flat, bool noShadow);
+
+// ── Skybox ───────────────────────────────────────────────────────────────────
+// Companion to the byte patch that makes every dimension take the End's
+// textured-cube sky path. The patch alone leaves the cube tinted by the biome
+// fog colour and drops the sun, moon and stars, because the End branch returns
+// before drawing them; this puts both back.
+void setSkybox(bool enabled);
 
 // ── Fog ──────────────────────────────────────────────────────────────────────
 // Replaces the fog colour the game computed for this frame. Only the RGB

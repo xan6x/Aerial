@@ -110,7 +110,7 @@ void Aerial::startup(void* moduleHandle) {
         // next injection.
         LOG_ERROR("Aerial", "hook installation failed - rolling back");
 
-        input::InputManager::get().removeWheelHook();
+        input::InputManager::get().removeMessageHook();
         hooks::removeAll();
         render::DrawUtils::releaseResources();
         render::D2DOverlay::get().shutdown();
@@ -124,7 +124,7 @@ void Aerial::startup(void* moduleHandle) {
     Config::get().loadActive();
 
     m_running = true;
-    LOG_INFO("Aerial", "ready - press Y for the menu, End to unload");
+    LOG_INFO("Aerial", "ready - press Insert for the menu, End to unload");
 }
 
 void Aerial::shutdown() {
@@ -145,8 +145,8 @@ void Aerial::shutdown() {
     // Message hooks first, so the drain inside removeAll() covers them too.
     // Unhooking does not wait for callbacks already running, and by this point
     // there is one parked on every thread in the process.
-    LOG_DEBUG("Aerial", "teardown: wheel hook");
-    input::InputManager::get().removeWheelHook();
+    LOG_DEBUG("Aerial", "teardown: message hook");
+    input::InputManager::get().removeMessageHook();
 
     LOG_DEBUG("Aerial", "teardown: detours");
     hooks::removeAll();
