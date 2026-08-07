@@ -25,6 +25,7 @@ void ModuleManager::registerAll() {
     add<modules::NoHurtCam>();
     add<modules::SelfNameTag>();
     add<modules::Skybox>();
+    add<modules::Zoom>();
 
     add<modules::ArrayList>();
     add<modules::Notifications>();
@@ -88,10 +89,11 @@ bool ModuleManager::handleKey(int key, bool down) {
 
     bool consumed = false;
     for (const auto& module : m_modules) {
-        if (module->keybind() == key) {
-            module->toggle();
-            consumed = true;
-        }
+        if (module->keybind() != key || module->holdBind())
+            continue;
+
+        module->toggle();
+        consumed = true;
     }
     return consumed;
 }

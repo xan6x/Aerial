@@ -42,6 +42,8 @@ public:
     int keybind() const { return m_keybind->value; }
     void setKeybind(int key) { m_keybind->value = key; }
 
+    virtual bool holdBind() const { return false; }
+
     virtual bool persistEnabled() const { return true; }
 
     virtual bool listed() const { return true; }
