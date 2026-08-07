@@ -127,8 +127,6 @@ bool SkyCubemap::load() {
 }
 
 void SkyCubemap::unload() {
-    // dropped, never destroyed: mce::TexturePtr's destructor address is unknown
-    // and calling the wrong one frees textures the game is still drawing with.
     m_faces.clear();
     m_faces.shrink_to_fit();
     m_ready = false;
@@ -170,8 +168,6 @@ void SkyCubemap::draw(void* camera) {
     for (int face = 0; face < 6; ++face) {
         void* texture = m_faces.data() + offsets::func::kTexturePtrSize * face;
 
-        // required: begin() returns without resetting if a batch is still open,
-        // and ours would then be appended to the game's.
         auto* state = static_cast<uint8_t*>(tessellator);
         state[0x170] = 0;
         state[0x125] = 0;
