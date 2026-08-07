@@ -12,6 +12,7 @@ inline constexpr uintptr_t ClientInstance_onTick        = 0x11B2D0;
 inline constexpr uintptr_t MinecraftGame_releaseMouse   = 0x13D920;  // verified
 inline constexpr uintptr_t ClientInstance_grabMouse     = 0x11BE90;  // verified
 inline constexpr uintptr_t ClientInstance_currentScreenShouldStealMouse = 0x11C230;
+inline constexpr uintptr_t PlayerInventoryProxy_selectSlot = 0xA4EA30;
 inline constexpr uintptr_t ClientInstance_leaveGame     = 0x119C80;
 inline constexpr uintptr_t ClientInstance_tickBuildAction = 0x11C350;  // per-tick attack/build action
 inline constexpr uintptr_t MinecraftGame_update         = 0x1312F0;
@@ -375,7 +376,13 @@ inline constexpr ptrdiff_t block = 0x18;  // Block*, null for non-block items
 namespace localPlayer {
 
 inline constexpr ptrdiff_t clientInstance = 0x15F0;
+inline constexpr ptrdiff_t inventoryProxy = 0x1450;
 } // namespace localPlayer
+
+namespace playerInventoryProxy {
+inline constexpr ptrdiff_t selectedSlot = 0x10;
+inline constexpr ptrdiff_t container    = 0x68;
+} // namespace playerInventoryProxy
 
 namespace clientInstance {
 inline constexpr ptrdiff_t minecraftGame = 0x30;   // from the chain above
