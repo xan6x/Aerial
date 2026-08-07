@@ -12,9 +12,6 @@ namespace {
 
 PVOID g_handler = nullptr;
 
-// Only the codes that mean "something is genuinely broken". The game raises
-// plenty of C++ and debugger exceptions in normal operation, and reporting those
-// would bury the one that matters.
 bool isFatal(DWORD code) {
     switch (code) {
     case EXCEPTION_ACCESS_VIOLATION:
@@ -45,10 +42,6 @@ const char* describe(DWORD code) {
     }
 }
 
-// Module owning `address`, plus the offset into it. An address that belongs to
-// no module at all is the interesting case: that is freed memory, and after an
-// eject it usually means a stale hook still pointing at where this DLL used to
-// be.
 struct Owner {
     char name[64] = "<unmapped>";
     uintptr_t offset = 0;
@@ -81,8 +74,6 @@ LONG CALLBACK onException(EXCEPTION_POINTERS* info) {
     if (!info || !info->ExceptionRecord || !isFatal(info->ExceptionRecord->ExceptionCode))
         return EXCEPTION_CONTINUE_SEARCH;
 
-    // Report once. A fault often repeats as the process unwinds, and a hundred
-    // identical blocks would push the useful first one out of view.
     static LONG reported = 0;
     if (InterlockedExchange(&reported, 1) != 0)
         return EXCEPTION_CONTINUE_SEARCH;
@@ -101,8 +92,6 @@ LONG CALLBACK onException(EXCEPTION_POINTERS* info) {
                   static_cast<uintptr_t>(record->ExceptionInformation[1]));
     }
 
-    // Where the fault came from matters as much as where it landed: a stale
-    // detour shows up as a game-module return address into an unmapped caller.
     void* frames[12]{};
     const USHORT captured = CaptureStackBackTrace(0, 12, frames, nullptr);
     for (USHORT i = 0; i < captured; ++i) {
@@ -113,12 +102,12 @@ LONG CALLBACK onException(EXCEPTION_POINTERS* info) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-} // namespace
+}
 
 void install() {
     if (g_handler)
         return;
-    // First in the chain, so the game cannot swallow the fault before we see it.
+
     g_handler = AddVectoredExceptionHandler(1, onException);
 }
 
@@ -129,4 +118,4 @@ void remove() {
     g_handler = nullptr;
 }
 
-} // namespace aerial::crash
+}

@@ -9,4 +9,4 @@ public:
     NoHurtCam();
 };
 
-} // namespace aerial::modules
+}

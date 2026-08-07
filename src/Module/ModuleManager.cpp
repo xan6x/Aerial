@@ -16,7 +16,6 @@ void ModuleManager::registerAll() {
     if (!m_modules.empty())
         return;
 
-    // Visuals
     add<modules::FogColor>();
     add<modules::FullBright>();
     add<modules::ItemPhysics>();
@@ -25,18 +24,15 @@ void ModuleManager::registerAll() {
     add<modules::NoHurtCam>();
     add<modules::Skybox>();
 
-    // Interface
     add<modules::ArrayList>();
     add<modules::Notifications>();
     add<modules::Watermark>();
 
-    // Input
     add<modules::AutoSprint>();
     add<modules::ItemDelayFix>();
     add<modules::NoCamReset>();
     add<modules::SensMultiplier>();
 
-    // Client
     add<modules::ClickGuiModule>();
     add<modules::Direct2D>();
     add<modules::NoVSync>();
@@ -95,4 +91,4 @@ bool ModuleManager::handleKey(int key, bool down) {
     return consumed;
 }
 
-} // namespace aerial
+}

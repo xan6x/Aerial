@@ -15,24 +15,16 @@ using json = nlohmann::json;
 namespace aerial {
 namespace {
 
-// Bump whenever a default that users cannot easily notice changes - keybinds,
-// mostly - and add a row to the table below saying what moved. An older file is
-// still read; only the settings named there are skipped, so the new default
-// takes effect without the rest of someone's config being thrown away for it.
-//
-// That is a change from how this worked: the whole file used to be rejected on
-// any version mismatch, which meant one moved keybind reset every module, every
-// slider and every colour the player had set.
 constexpr int kConfigVersion = 3;
 
 struct DefaultChange {
     const char* module;
     const char* setting;
-    int version;   // the version the new default arrived in
+    int version;
 };
 
 constexpr DefaultChange kDefaultChanges[] = {
-    {"ClickGui", "Keybind", 3},   // back to Insert
+    {"ClickGui", "Keybind", 3},
 };
 
 bool supersededDefault(const std::string& module, const std::string& setting, int fileVersion) {
@@ -102,7 +94,7 @@ void deserialise(Setting& setting, const json& value) {
     }
 }
 
-} // namespace
+}
 
 Config& Config::get() {
     static Config instance;
@@ -199,8 +191,6 @@ bool Config::create(const std::string& rawName) {
         return false;
     }
 
-    // A new config starts as a snapshot of what is on screen right now, which
-    // is almost always what someone means by "create".
     m_current = name;
     writeActiveMarker();
     return save(name);
@@ -215,8 +205,6 @@ bool Config::remove(const std::string& name) {
 
     LOG_INFO("Config", "deleted '{}'", name);
 
-    // Deleting the active config leaves nothing selected; fall back so save()
-    // does not write to a file the user just removed.
     if (m_current == name) {
         m_current = "default";
         writeActiveMarker();
@@ -281,8 +269,7 @@ bool Config::load(const std::string& requested) {
 
     const int version = root.value("version", 0);
     if (version <= 0 || version > kConfigVersion) {
-        // Either not ours or written by a build newer than this one, where a
-        // setting could mean something this code does not know about.
+
         LOG_WARN("Config", "{} declares version {}, which this build cannot read (expected 1..{})",
                  path.string(), version, kConfigVersion);
         return false;
@@ -314,8 +301,6 @@ bool Config::load(const std::string& requested) {
             }
         }
 
-        // Loading a config must be able to turn things off as well as on,
-        // otherwise switching between configs only ever accumulates modules.
         if (module->persistEnabled())
             module->setEnabled(entry->value("enabled", false));
     }
@@ -327,4 +312,4 @@ bool Config::load(const std::string& requested) {
     return true;
 }
 
-} // namespace aerial
+}

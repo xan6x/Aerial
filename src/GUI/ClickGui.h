@@ -11,12 +11,6 @@
 
 namespace aerial::gui {
 
-// A single centred window: frosted glass, a category rail on the left and
-// module cards on the right, with the settings for a card expanding inline.
-//
-// The menu does not capture keybinds while open - its own bind has to keep
-// working so the same key closes it. Capture is only taken while a key is being
-// assigned to a module.
 class ClickGui {
 public:
     static ClickGui& get();
@@ -37,27 +31,17 @@ private:
         Rect rail;
         Rect content;
         Rect header;
-        // Right edge of the module cards. With a background character the cards
-        // stop short of it so the artwork keeps a column of its own instead of
-        // being sliced into strips by opaque rows.
+
         float cardsRight = 0.0f;
         float scale = 1.0f;
     };
 
-    // Resource id of the selected artwork, 0 when none.
     int activeCharacter() const;
 
-    // `amount` is the eased open progress: at 0 the window sits below its
-    // resting place, at 1 it is home. The offset is baked into the layout
-    // rather than into the drawing so hit areas travel with what is drawn.
     Layout computeLayout(const Vec2& screenSize, float amount) const;
 
-    // Artwork behind the cards, anchored to the bottom-right of the content
-    // area and clipped by the window's rounded corners.
     void renderCharacter(const Layout& layout, float amount);
 
-    // A scrolled list's position. The offset is animated rather than snapped so
-    // a detent glides instead of jumping a row at a time.
     struct ScrollState {
         Animated position{0.0f};
         float max = 0.0f;
@@ -73,8 +57,6 @@ private:
     void renderRail(const Layout& layout, float amount);
     void renderCards(const Layout& layout, float amount);
 
-    // Thumb on the right edge of `view`. Drawn only when there is something to
-    // scroll, so a short list keeps its full width.
     void renderScrollbar(const Rect& view, const ScrollState& scroll, float contentHeight,
                          float scale, float amount);
     float renderCard(Module& module, const Rect& card, float scale, int index);
@@ -84,7 +66,6 @@ private:
 
     void handleClick(const Vec2& cursor, bool right);
 
-    // Moves the slider currently held to wherever the cursor is horizontally.
     void dragSliderTo(float x);
 
     Animated& animation(const void* key, float initial = 0.0f);
@@ -96,8 +77,6 @@ private:
     std::unordered_map<const void*, Animated> m_animations;
     std::unordered_map<const void*, Animated> m_hoverAnimations;
 
-    // Hit rectangles recorded while drawing, so clicks test exactly what is on
-    // screen instead of a second, drifting copy of the layout maths.
     enum class HitKind {
         Module,
         Setting,
@@ -121,21 +100,13 @@ private:
         Category category = Category::Visuals;
         std::string config;
 
-        // Sliders only: the track exactly as it was drawn this frame, and the
-        // larger box that counts as grabbing it. Recomputing the track when the
-        // click arrives used the unfitted scale, so on a screen short enough to
-        // shrink the window the value did not land where the knob was.
         Rect track;
         Rect grab;
     };
     std::vector<Hit> m_hits;
 
-    // Declared here rather than beside handleClick because it takes a Hit, and
-    // the parameter's type has to be known by the time it is named.
     void applySettingClick(const Hit& hit, const Vec2& cursor, bool right);
 
-    // Which page the content area shows: the modules of a category, or the
-    // config manager.
     enum class Page { Modules, Configs };
     Page m_page = Page::Modules;
 
@@ -145,28 +116,20 @@ private:
     bool m_editingName = false;
     std::string m_nameBuffer;
 
-    // Search runs across every category, not just the selected one - the whole
-    // point is to reach a module without knowing where it was filed.
     bool m_searching = false;
     std::string m_search;
 
     ScrollState m_moduleScroll;
     ScrollState m_configScroll;
 
-    // The list currently under the cursor, so the wheel scrolls what is being
-    // pointed at rather than whatever was last drawn.
     ScrollState& activeScroll();
 
     Setting* m_draggingSlider = nullptr;
     Rect m_draggingSliderRect;
     Module* m_bindingModule = nullptr;
 
-    // Linear 0..1 open progress, advanced by wall time and eased at the point
-    // of use. A smoother was the wrong tool: it never reaches its target, so
-    // the movement always petered out instead of landing.
     float m_transition = 0.0f;
 
-    // How far the rail and the list still trail the window, in pixels.
     float m_contentSlide = 0.0f;
 
     std::string m_tooltip;
@@ -176,4 +139,4 @@ private:
     Vec2 m_cursor;
 };
 
-} // namespace aerial::gui
+}

@@ -9,10 +9,6 @@
 
 namespace aerial {
 
-// Owns every module instance and routes keybinds.
-//
-// Registering a new module is a single line in ModuleManager::registerAll():
-//     add<KillAura>();
 class ModuleManager {
 public:
     static ModuleManager& get();
@@ -25,7 +21,6 @@ public:
     Module* find(std::string_view name) const;
     std::vector<Module*> byCategory(Category category) const;
 
-    // Modules that are enabled, sorted the way the array list wants them.
     std::vector<Module*> activeModules() const;
 
     template <typename T>
@@ -37,7 +32,6 @@ public:
         return nullptr;
     }
 
-    // Called by the input layer; returns true when a bind consumed the key.
     bool handleKey(int key, bool down);
 
 private:
@@ -54,4 +48,4 @@ private:
     std::vector<std::unique_ptr<Module>> m_modules;
 };
 
-} // namespace aerial
+}

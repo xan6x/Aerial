@@ -17,27 +17,16 @@ std::string Skybox::suffix() const {
     if (!m_patch.applied())
         return m_found == Found::Nothing ? "no sky in pack" : "unavailable";
 
-    // Once it is drawing, the only thing worth saying is which of the two skies
-    // a pack turned out to have.
     return m_found == Found::Cubemap ? "cubemap" : std::string{};
 }
 
 void Skybox::onEnable() {
     const packs::SkyAssets assets = packs::scanActive();
 
-    // The cubemap wins whenever a pack has one, even if it also ships an
-    // end_sky - and packs that ship both are common, because end_sky is what
-    // the End wants and the cubemap is what the overworld wants. Checking
-    // end_sky first is why this module put the End's 128-pixel starfield in the
-    // overworld of a pack whose real sky was six 2048-pixel faces sitting right
-    // next to it. That is not a fallback, it is the wrong picture.
     if (assets.faces) {
         m_found = Found::Cubemap;
         LOG_INFO("Skybox", "drawing the pack's overworld_cubemap");
 
-        // Both, and in this order. The patch is what stops the procedural sky
-        // drawing its gradient over everything; the cubemap is then drawn last,
-        // inside the End cube, so the cube's single texture never shows.
         if (!m_patch.apply()) {
             LOG_ERROR("Skybox", "the sky branch patch could not be applied");
             return;
@@ -71,4 +60,4 @@ void Skybox::onDisable() {
     m_patch.revert();
 }
 
-} // namespace aerial::modules
+}

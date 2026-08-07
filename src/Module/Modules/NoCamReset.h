@@ -9,4 +9,4 @@ public:
     NoCamReset();
 };
 
-} // namespace aerial::modules
+}

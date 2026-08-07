@@ -12,10 +12,6 @@ namespace {
 
 HMODULE g_module = nullptr;
 
-// Every few seconds, report whether the hooks are running and what owns the
-// foreground. If a keybind does nothing, this line says which half is at
-// fault: no frames means the render hook is dead, frames but focused=false
-// means the focus check is wrong.
 void logHeartbeat() {
     static uint64_t lastFrames = 0;
     static uint64_t lastTicks = 0;
@@ -54,10 +50,7 @@ void logHeartbeat() {
     lastInput = input;
 }
 
-// The module handle for this DLL, or null when the loader has never heard of
-// it - which is what a manually mapping injector leaves behind. Derived from
-// our own code rather than from what DllMain was handed, because a mapper is
-// free to pass anything there.
+// Null when manually mapped; FreeLibraryAndExitThread must not be called then.
 HMODULE loaderModule() {
     HMODULE module = nullptr;
     const bool found = GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -66,18 +59,12 @@ HMODULE loaderModule() {
     return found ? module : nullptr;
 }
 
-// Startup runs off the loader lock: DllMain must not hook, allocate consoles or
-// spawn work while it holds it.
 DWORD WINAPI startupThread(LPVOID) {
     aerial::Aerial::get().startup(g_module);
 
     LOG_INFO("Aerial", "loaded from {} ({})", static_cast<void*>(loaderModule()),
              loaderModule() ? "loader-mapped" : "manually mapped - eject will not unload the image");
 
-    // Eject key: End. Polled here rather than through the input hooks so the
-    // client can always be removed, even if a hook misbehaves.
-    // 15 ms: fast enough that key presses are not missed between frames, and
-    // this thread is the one proven able to read the key state in this process.
     constexpr int kIntervalMs = 15;
     constexpr int kHeartbeatTicks = 3000 / kIntervalMs;
 
@@ -99,24 +86,14 @@ DWORD WINAPI startupThread(LPVOID) {
 
     aerial::Aerial::get().shutdown();
 
-    // FreeLibraryAndExitThread is only valid for a module the loader knows
-    // about. Injectors that map the image themselves never registered one, and
-    // handing the loader a base address it has no record of unloads nothing -
-    // it either fails or takes the process with it. Ask whether this code is in
-    // a module the loader owns, and only then unload.
-    //
-    // UNCHANGED_REFCOUNT, because the point is to ask a question, not to take a
-    // reference that then has to be given back.
     HMODULE self = loaderModule();
     if (self)
         FreeLibraryAndExitThread(self, 0);
 
-    // Manually mapped: the detours are off and everything is torn down, which is
-    // as far as an eject can go from in here. The image stays where it is.
     ExitThread(0);
 }
 
-} // namespace
+}
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     switch (reason) {
@@ -130,8 +107,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         break;
     }
     case DLL_PROCESS_DETACH:
-        // Process teardown: the game is going away anyway, so only flush state
-        // that lives outside the process.
+
         break;
     default:
         break;

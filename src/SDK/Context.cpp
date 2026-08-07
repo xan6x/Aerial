@@ -22,7 +22,7 @@ void Context::reset() {
     gameMode = nullptr;
     level = nullptr;
     screenContext = nullptr;
-    // `client` outlives worlds — it is only cleared when the game shuts down.
+
 }
 
-} // namespace aerial::sdk
+}

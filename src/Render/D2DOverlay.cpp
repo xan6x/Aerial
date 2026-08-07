@@ -17,7 +17,6 @@
 namespace aerial::render {
 namespace {
 
-// IDXGISwapChain / IDXGISwapChain1 vtable slots.
 constexpr int kPresentIndex = 8;
 constexpr int kResizeBuffersIndex = 13;
 constexpr int kPresent1Index = 22;
@@ -34,8 +33,6 @@ Detour<ResizeBuffersFn> g_resizeBuffers;
 
 std::atomic<uint64_t> g_presentCalls{0};
 
-// Consecutive frames the shared-texture lock could not be taken, and how many
-// in a row are worth a line in the log.
 std::atomic<uint64_t> g_acquireFailures{0};
 constexpr uint64_t kAcquireComplaint = 60;
 
@@ -47,9 +44,6 @@ void release(T*& object) {
     }
 }
 
-// A full-screen triangle carrying the overlay texture. Nothing here depends on
-// the game's pipeline: the vertex positions come from SV_VertexID, so no vertex
-// or index buffer and no input layout are needed.
 constexpr char kShaderSource[] = R"(
 struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
 
@@ -68,16 +62,14 @@ float4 ps_main(VSOut input) : SV_TARGET {
 }
 )";
 
-} // namespace
+}
 
-// Everything the game's device needs in order to blend our texture over its
-// frame, plus a snapshot of the pipeline state we disturb.
 struct GameResources {
     ID3D11Device* device = nullptr;
     ID3D11DeviceContext* context = nullptr;
     ID3D11RenderTargetView* target = nullptr;
-    ID3D11Texture2D* targetTexture = nullptr;  // identity only, never dereferenced
-    ID3D11Texture2D* overlay = nullptr;      // the shared texture, opened here
+    ID3D11Texture2D* targetTexture = nullptr;
+    ID3D11Texture2D* overlay = nullptr;
     ID3D11ShaderResourceView* overlayView = nullptr;
     IDXGIKeyedMutex* mutex = nullptr;
     ID3D11VertexShader* vertexShader = nullptr;
@@ -107,7 +99,6 @@ struct GameResources {
 namespace {
 GameResources g_game;
 
-// Our own BGRA-capable device, which is the whole reason this path exists.
 ID3D11Device* g_ownDevice = nullptr;
 ID3D11DeviceContext* g_ownContext = nullptr;
 ID3D11Texture2D* g_sharedTexture = nullptr;
@@ -152,7 +143,7 @@ bool compileShaders() {
 }
 
 bool createStates() {
-    // Direct2D writes premultiplied alpha, so source is already scaled.
+
     D3D11_BLEND_DESC blend{};
     blend.RenderTarget[0].BlendEnable = TRUE;
     blend.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
@@ -188,7 +179,7 @@ bool createStates() {
     return SUCCEEDED(g_game.device->CreateDepthStencilState(&depth, &g_game.depth));
 }
 
-} // namespace
+}
 
 struct D2DHooks {
     static HRESULT __stdcall present(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
@@ -196,8 +187,6 @@ struct D2DHooks {
         return g_present.call(swapChain, syncInterval, flags);
     }
 
-    // The game picks its present call from the vsync flag: Present with vsync
-    // on, Present1 with it off. Both have to be covered.
     static HRESULT __stdcall present1(IDXGISwapChain1* swapChain, UINT syncInterval, UINT flags,
                                       const DXGI_PRESENT_PARAMETERS* parameters) {
         guarded("D2D present1",
@@ -207,8 +196,7 @@ struct D2DHooks {
 
     static HRESULT __stdcall resizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount, UINT width,
                                            UINT height, DXGI_FORMAT format, UINT flags) {
-        // Our render target view holds a reference to the back buffer, and
-        // ResizeBuffers fails while any reference is outstanding.
+
         D2DOverlay::get().onResize();
         return g_resizeBuffers.call(swapChain, bufferCount, width, height, format, flags);
     }
@@ -227,9 +215,6 @@ bool D2DOverlay::install() {
     if (m_installed)
         return true;
 
-    // A composition swap chain needs no window, which is what makes this work
-    // inside an AppContainer. It is thrown away immediately - all we want is the
-    // vtable, which every swap chain in the process shares.
     IDXGIFactory2* factory = nullptr;
     if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&factory)))) {
         m_status = "CreateDXGIFactory1 failed";
@@ -299,7 +284,7 @@ bool D2DOverlay::install() {
 }
 
 bool D2DOverlay::createTarget(IDXGISwapChain* swapChain) {
-    // ── The game's side ──────────────────────────────────────────────────────
+
     if (FAILED(swapChain->GetDevice(__uuidof(ID3D11Device),
                                     reinterpret_cast<void**>(&g_game.device)))) {
         m_status = "swap chain has no D3D11 device";
@@ -321,15 +306,6 @@ bool D2DOverlay::createTarget(IDXGISwapChain* swapChain) {
 
     HRESULT hr = S_OK;
 
-    // ── Our side: a BGRA-capable device Direct2D will accept ─────────────────
-    //
-    // The game's device was created in 2017 without D3D11_CREATE_DEVICE_BGRA_
-    // SUPPORT, and Direct2D refuses it with E_INVALIDARG. That flag cannot be
-    // added after the fact, so the overlay is rendered on a device of our own
-    // and handed over through a shared texture.
-    // Both devices must sit on the same adapter or the shared texture cannot be
-    // opened - which is exactly what happens on a hybrid-graphics laptop if the
-    // default adapter is taken.
     IDXGIAdapter* adapter = nullptr;
     {
         IDXGIDevice* gameDxgi = nullptr;
@@ -383,7 +359,6 @@ bool D2DOverlay::createTarget(IDXGISwapChain* swapChain) {
         return false;
     }
 
-    // Open the same texture on the game's device.
     if (FAILED(g_game.device->OpenSharedResource(g_sharedHandle, __uuidof(ID3D11Texture2D),
                                                  reinterpret_cast<void**>(&g_game.overlay)))) {
         m_status = "OpenSharedResource failed";
@@ -405,7 +380,6 @@ bool D2DOverlay::createTarget(IDXGISwapChain* swapChain) {
         return false;
     }
 
-    // ── Direct2D on our device ───────────────────────────────────────────────
     IDXGIDevice* dxgiDevice = nullptr;
     if (FAILED(g_ownDevice->QueryInterface(__uuidof(IDXGIDevice),
                                            reinterpret_cast<void**>(&dxgiDevice)))) {
@@ -478,10 +452,6 @@ bool D2DOverlay::createTarget(IDXGISwapChain* swapChain) {
     return true;
 }
 
-// A flip-model swap chain rotates its buffers, so the texture behind
-// GetBuffer(0) is not the same one from frame to frame. Caching a render target
-// view from the first frame means drawing into a buffer that is not the one
-// about to be presented, so the view is re-acquired and cached per texture.
 ID3D11RenderTargetView* D2DOverlay::currentTarget(IDXGISwapChain* swapChain) {
     ID3D11Texture2D* backBuffer = nullptr;
     if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D),
@@ -500,7 +470,6 @@ ID3D11RenderTargetView* D2DOverlay::currentTarget(IDXGISwapChain* swapChain) {
         return nullptr;
     }
 
-    // Held only as an identity for the comparison above, not dereferenced.
     g_game.targetTexture = backBuffer;
     release(backBuffer);
     return g_game.target;
@@ -516,7 +485,6 @@ void D2DOverlay::composite(IDXGISwapChain* swapChain) {
 
     auto* context = g_game.context;
 
-    // Save only what is touched; the game continues its frame right after.
     ID3D11RenderTargetView* savedTargets[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT]{};
     ID3D11DepthStencilView* savedDepth = nullptr;
     context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, savedTargets, &savedDepth);
@@ -552,8 +520,6 @@ void D2DOverlay::composite(IDXGISwapChain* swapChain) {
     D3D11_PRIMITIVE_TOPOLOGY savedTopology{};
     context->IAGetPrimitiveTopology(&savedTopology);
 
-    // Stages we do not use but which would otherwise run over our draw with
-    // whatever the game left bound - and, worse, stay bound afterwards.
     ID3D11GeometryShader* savedGeometryShader = nullptr;
     ID3D11HullShader* savedHullShader = nullptr;
     ID3D11DomainShader* savedDomainShader = nullptr;
@@ -565,7 +531,6 @@ void D2DOverlay::composite(IDXGISwapChain* swapChain) {
     D3D11_RECT savedScissors[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE]{};
     context->RSGetScissorRects(&savedScissorCount, savedScissors);
 
-    // Draw the overlay.
     if (SUCCEEDED(g_game.mutex->AcquireSync(kMutexKey, 16))) {
         const D3D11_VIEWPORT viewport{0.0f, 0.0f, m_size.x, m_size.y, 0.0f, 1.0f};
         const FLOAT blendFactor[4]{0.0f, 0.0f, 0.0f, 0.0f};
@@ -589,7 +554,6 @@ void D2DOverlay::composite(IDXGISwapChain* swapChain) {
         g_game.mutex->ReleaseSync(kMutexKey);
     }
 
-    // Put everything back.
     context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, savedTargets, savedDepth);
     context->OMSetBlendState(savedBlend, savedBlendFactor, savedSampleMask);
     context->OMSetDepthStencilState(savedDepthState, savedStencilRef);
@@ -628,9 +592,6 @@ void D2DOverlay::composite(IDXGISwapChain* swapChain) {
 void D2DOverlay::releaseTarget() {
     m_ready = false;
 
-    // The decoded bitmaps belong to the context about to go away. The cache was
-    // documented as being dropped here but never actually was, so after a resize
-    // the artwork was being drawn from a dead device.
     images::releaseAll();
 
     if (m_context)
@@ -667,8 +628,6 @@ void D2DOverlay::onPresent(IDXGISwapChain* swapChain) {
     if (g_presentCalls.fetch_add(1, std::memory_order_relaxed) == 0)
         LOG_INFO("D2D", "first present intercepted, swap chain {}", static_cast<void*>(swapChain));
 
-    // Switched off, or given up on: leave the frame and the pipeline completely
-    // untouched.
     if (!m_enabled || m_abandoned.load(std::memory_order_relaxed))
         return;
 
@@ -686,12 +645,6 @@ void D2DOverlay::onPresent(IDXGISwapChain* swapChain) {
     if (!m_frameCallback)
         return;
 
-    // Draw the overlay on our device, then hand the texture over.
-    //
-    // The timeout is short so a frame is dropped rather than stalling the game's
-    // Present, but a lock that never comes free means the overlay silently draws
-    // nothing for the rest of the session - which is not a state anyone would
-    // work out from watching the screen, so it is worth saying out loud once.
     if (const HRESULT acquired = g_sharedMutex->AcquireSync(kMutexKey, 16); FAILED(acquired)) {
         if (g_acquireFailures.fetch_add(1, std::memory_order_relaxed) == kAcquireComplaint) {
             LOG_WARN("D2D", "the overlay texture lock has failed {} frames running ({:#x})",
@@ -726,4 +679,4 @@ void D2DOverlay::shutdown() {
     m_status = "shut down";
 }
 
-} // namespace aerial::render
+}

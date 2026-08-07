@@ -9,14 +9,6 @@
 
 namespace aerial {
 
-// Thin, typed wrapper over MinHook.
-//
-//   inline Detour<void(__fastcall*)(GameMode*)> g_tick;
-//   g_tick.attach("GameMode::tick", memory::rva(Offsets::GameMode_tick), &myTick);
-//   g_tick.call(self);           // invokes the trampoline
-//
-// Every Detour registers itself with HookManager so that unloading the DLL can
-// remove hooks in reverse order and wait for in-flight detours to drain.
 class DetourBase {
 public:
     virtual ~DetourBase() = default;
@@ -31,7 +23,6 @@ public:
     bool init();
     void shutdown();
 
-    // Applies every queued hook in one MinHook transaction (single thread freeze).
     bool enableAll();
 
     void registerDetour(DetourBase* detour);
@@ -47,10 +38,10 @@ private:
 };
 
 namespace detail {
-// Defined in Hook.cpp so MinHook stays out of every translation unit.
+
 bool createHook(void* target, void* detour, void** original);
 bool removeHook(void* target);
-} // namespace detail
+}
 
 template <typename Fn>
 class Detour final : public DetourBase {
@@ -65,7 +56,6 @@ public:
         HookManager::get().unregisterDetour(this);
     }
 
-    // `target` is an absolute address; queue the hook (enable happens in enableAll).
     bool attach(std::string name, uintptr_t target, Fn detour) {
         m_name = std::move(name);
 
@@ -98,7 +88,6 @@ public:
         return ok;
     }
 
-    // Calls the original function through the trampoline.
     template <typename... Args>
     auto call(Args&&... args) const -> decltype(std::declval<Fn>()(std::declval<Args>()...)) {
         return m_original(std::forward<Args>(args)...);
@@ -115,4 +104,4 @@ private:
     bool m_attached = false;
 };
 
-} // namespace aerial
+}

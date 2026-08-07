@@ -6,7 +6,7 @@ namespace aerial {
 struct KeyEvent;
 struct MouseEvent;
 struct Render2DEvent;
-} // namespace aerial
+}
 
 namespace aerial::modules {
 
@@ -30,4 +30,4 @@ private:
     FloatSetting* m_characterOpacity;
 };
 
-} // namespace aerial::modules
+}

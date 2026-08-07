@@ -30,13 +30,9 @@ std::atomic<uint32_t> g_textsSkipped{0};
 float g_scaleOverride = 0.0f;
 Vec2 g_screenSize{};
 float g_uiScale = 1.0f;
-// Remembers, per push, whether a layer or an axis-aligned clip was used, so the
-// matching pop calls the right thing.
+
 std::vector<bool> g_clipStack;
 
-// The same clip, kept in plain rectangles. Direct2D enforces its own, but the
-// fallback backend has no scissor at all - without this, a scrolled list simply
-// draws straight through the window and out over the game.
 std::vector<Rect> g_softClip;
 
 Rect intersect(const Rect& a, const Rect& b) {
@@ -44,10 +40,7 @@ Rect intersect(const Rect& a, const Rect& b) {
             std::min(a.bottom, b.bottom)};
 }
 
-// Current clip, or nullptr when nothing is pushed.
 const Rect* softClip() { return g_softClip.empty() ? nullptr : &g_softClip.back(); }
-
-// ── Game renderer backend ────────────────────────────────────────────────────
 
 using ScreenRendererSingletonFn = void*(__fastcall*)();
 using ScreenRendererFillFn = void(__fastcall*)(void*, float, float, float, float, const sdk::Color*);
@@ -90,8 +83,6 @@ float legacyScale() {
     return 2.0f;
 }
 
-// ── Direct2D backend ─────────────────────────────────────────────────────────
-
 D2D1_COLOR_F toD2D(const Colour& colour) {
     return D2D1::ColorF(colour.r, colour.g, colour.b, colour.a);
 }
@@ -100,9 +91,6 @@ D2D1_RECT_F toD2D(const Rect& area) {
     return D2D1::RectF(area.left, area.top, area.right, area.bottom);
 }
 
-// At namespace scope rather than inside brush(), so teardown can drop them: a
-// brush holds a reference to its context, which holds the device, so a cache
-// left behind kept a whole D3D11 device alive after unload.
 ID2D1SolidColorBrush* g_brush = nullptr;
 ID2D1DeviceContext* g_brushOwner = nullptr;
 
@@ -135,8 +123,6 @@ DWRITE_FONT_WEIGHT toDWrite(DrawUtils::Weight weight) {
     return DWRITE_FONT_WEIGHT_NORMAL;
 }
 
-// Text formats are immutable, so one per size/weight pair is cached for the
-// lifetime of the overlay rather than rebuilt per draw.
 std::unordered_map<uint64_t, IDWriteTextFormat*> g_formats;
 
 IDWriteTextFormat* textFormat(float size, DrawUtils::Weight weight) {
@@ -191,8 +177,7 @@ D2D1_ROUNDED_RECT rounded(const Rect& area, float radius) {
     return D2D1::RoundedRect(toD2D(area), std::min(radius, limit), std::min(radius, limit));
 }
 
-
-} // namespace
+}
 
 bool DrawUtils::usingD2D() { return D2DOverlay::get().ready(); }
 
@@ -209,12 +194,8 @@ void DrawUtils::beginFrame() {
         g_screenSize = {width > 0.0f ? width / scale : 640.0f, height > 0.0f ? height / scale : 360.0f};
     }
 
-    // Layout is authored against a 1000-unit-tall screen.
     g_uiScale = std::max(0.35f, g_screenSize.y / 1000.0f);
 
-    // Log again whenever the backend changes: the first line is always written
-    // before the Direct2D overlay has had a frame to attach, so a single log
-    // would permanently claim the fallback is in use.
     static bool lastBackendWasD2D = false;
     static bool logged = false;
     if (g_screenSize.y > 0.0f && (!logged || lastBackendWasD2D != usingD2D())) {
@@ -285,7 +266,6 @@ void DrawUtils::outline(const Rect& area, const Colour& colour, float thickness,
     if (!paint)
         return;
 
-    // Inset by half the stroke so the outline stays inside `area`.
     const Rect inner = area.inset(thickness * 0.5f);
     if (radius > 0.5f)
         context->DrawRoundedRectangle(rounded(inner, radius - thickness * 0.5f), paint, thickness);
@@ -299,7 +279,7 @@ void DrawUtils::gradient(const Rect& area, const Colour& from, const Colour& to,
                          float radius) {
     auto* context = D2DOverlay::get().context();
     if (!usingD2D() || !context) {
-        // Approximate with strips.
+
         constexpr int kSteps = 16;
         const float step = (vertical ? area.height() : area.width()) / kSteps;
         for (int i = 0; i < kSteps; ++i) {
@@ -345,8 +325,6 @@ void DrawUtils::shadow(const Rect& area, const Colour& colour, float blur, float
         return;
     }
 
-    // Concentric rounded rectangles with falling alpha: cheaper than a real
-    // shadow effect and, at these sizes, indistinguishable.
     const int rings = std::max(2, static_cast<int>(blur));
     for (int i = rings; i > 0; --i) {
         const float t = static_cast<float>(i) / rings;
@@ -359,15 +337,8 @@ void DrawUtils::shadow(const Rect& area, const Colour& colour, float blur, float
 void DrawUtils::blurBehind(const Rect& area, float radius, float strength) {
     (void)strength;
 
-    // Real backdrop blur needs the game's frame as a source. Since the overlay
-    // moved onto its own device, the Direct2D target holds only our own
-    // (transparent) surface, so there is nothing here to blur - sampling it
-    // would cost a full-screen copy per frame and show nothing. Until the
-    // game's back buffer is shared back the other way, this draws the tinted
-    // panel the frosted look falls back to.
     fill(area, Colour::rgb(0x0E1117, 0.88f), radius);
 }
-
 
 void DrawUtils::text(const std::string& value, const Vec2& position, const Colour& colour, float size,
                      Weight weight, Align align) {
@@ -381,15 +352,12 @@ void DrawUtils::text(const std::string& value, const Vec2& position, const Colou
             g_textsSkipped.fetch_add(1, std::memory_order_relaxed);
             return;
         }
-        // The bitmap font has one size; only alignment can be honoured.
+
         float x = position.x;
         const float width = font->width(value, 1.0f);
         if (align != Align::Left)
             x -= align == Align::Centre ? width * 0.5f : width;
 
-        // No scissor here, so a line that would land outside the clip is dropped
-        // whole. Half a row of text hanging below a scrolling list reads far
-        // worse than a row that simply is not there.
         if (const Rect* clip = softClip()) {
             const float line = textHeight(size);
             if (position.y < clip->top || position.y + line > clip->bottom ||
@@ -455,7 +423,6 @@ std::string DrawUtils::fit(const std::string& value, float maxWidth, float size,
     if (textWidth(value, size, weight) <= maxWidth)
         return value;
 
-    // The bitmap font has no ellipsis glyph, so spell it out there.
     const std::string ellipsis = usingD2D() ? "\xE2\x80\xA6" : "...";
     const float ellipsisWidth = textWidth(ellipsis, size, weight);
     if (ellipsisWidth >= maxWidth)
@@ -463,7 +430,7 @@ std::string DrawUtils::fit(const std::string& value, float maxWidth, float size,
 
     size_t length = value.size();
     while (length > 0) {
-        // Never cut inside a UTF-8 sequence.
+
         while (length > 0 && (static_cast<unsigned char>(value[length - 1]) & 0xC0) == 0x80)
             --length;
         if (length == 0)
@@ -472,7 +439,7 @@ std::string DrawUtils::fit(const std::string& value, float maxWidth, float size,
 
         const std::string candidate = value.substr(0, length);
         if (textWidth(candidate, size, weight) + ellipsisWidth <= maxWidth) {
-            // Trim a trailing space so the ellipsis hugs the last word.
+
             const size_t end = candidate.find_last_not_of(' ');
             return (end == std::string::npos ? candidate : candidate.substr(0, end + 1)) + ellipsis;
         }
@@ -545,8 +512,7 @@ float DrawUtils::imageAspect(int resourceId) {
 }
 
 void DrawUtils::pushClip(const Rect& area, float radius) {
-    // Nested clips intersect, so an inner region can never draw outside an outer
-    // one - the window clip stays honoured by the list clip inside it.
+
     g_softClip.push_back(g_softClip.empty() ? area : intersect(area, g_softClip.back()));
 
     auto* context = D2DOverlay::get().context();
@@ -561,8 +527,6 @@ void DrawUtils::pushClip(const Rect& area, float radius) {
         return;
     }
 
-    // A rounded clip needs a layer with a geometric mask; an axis-aligned clip
-    // would let artwork square off the window's corners.
     ID2D1Factory* factory = nullptr;
     context->GetFactory(&factory);
 
@@ -624,4 +588,4 @@ void DrawUtils::popClip() {
         context->PopAxisAlignedClip();
 }
 
-} // namespace aerial::render
+}

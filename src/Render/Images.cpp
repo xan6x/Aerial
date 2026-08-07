@@ -33,8 +33,6 @@ IWICImagingFactory* wic() {
     if (g_wic)
         return g_wic;
 
-    // The game has already initialised COM on its threads; asking for a
-    // different apartment here is expected and harmless.
     const HRESULT init = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(init) && init != RPC_E_CHANGED_MODE)
         return nullptr;
@@ -91,7 +89,7 @@ Entry decode(int resourceId, ID2D1DeviceContext* context) {
     if (SUCCEEDED(hr))
         hr = factory->CreateFormatConverter(&converter);
     if (SUCCEEDED(hr)) {
-        // Premultiplied BGRA is what the Direct2D target expects.
+
         hr = converter->Initialize(frame, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
                                    nullptr, 0.0, WICBitmapPaletteTypeMedianCut);
     }
@@ -116,14 +114,13 @@ Entry decode(int resourceId, ID2D1DeviceContext* context) {
     return entry;
 }
 
-} // namespace
+}
 
 ID2D1Bitmap* get(int resourceId) {
     auto* context = D2DOverlay::get().context();
     if (!D2DOverlay::get().ready() || !context)
         return nullptr;
 
-    // Bitmaps are tied to the device that created them.
     if (g_owner != context) {
         releaseAll();
         g_owner = context;
@@ -151,4 +148,4 @@ void releaseAll() {
     g_owner = nullptr;
 }
 
-} // namespace aerial::render::images
+}

@@ -20,4 +20,4 @@ void Direct2D::onEnable() { render::D2DOverlay::get().setEnabled(true); }
 
 void Direct2D::onDisable() { render::D2DOverlay::get().setEnabled(false); }
 
-} // namespace aerial::modules
+}

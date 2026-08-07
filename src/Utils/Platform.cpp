@@ -22,9 +22,6 @@ bool ownedByUs(HWND window) {
     return pid == GetCurrentProcessId();
 }
 
-// Our own log console must never be mistaken for the game window: it belongs to
-// this process too, and treating it as the game made the GUI respond to keys
-// while the console had focus.
 bool isConsole(HWND window) {
     const std::wstring name = classNameOf(window);
     return name == L"ConsoleWindowClass" || name == L"CASCADIA_HOSTING_WINDOW_CLASS" ||
@@ -55,8 +52,6 @@ BOOL CALLBACK topLevelProc(HWND window, LPARAM param) {
             return FALSE;
         }
 
-        // Keep the largest non-console visible window as a fallback for
-        // non-UWP builds of the game.
         if (IsWindowVisible(window) && !isConsole(window)) {
             RECT rect{};
             GetClientRect(window, &rect);
@@ -68,18 +63,14 @@ BOOL CALLBACK topLevelProc(HWND window, LPARAM param) {
         }
     }
 
-    // The CoreWindow usually lives inside an ApplicationFrameWindow owned by
-    // another process, so descend into every top-level window.
     EnumChildWindows(window, childProc, param);
     return search->coreWindow == nullptr;
 }
 
-} // namespace
+}
 
 HWND gameWindow() {
-    // Resolved from both the render thread and the client thread, so the search
-    // and the log line are serialised - otherwise the first two callers race
-    // and both report the window.
+
     static std::mutex mutex;
     static HWND cached = nullptr;
 
@@ -112,15 +103,9 @@ bool gameFocused() {
     if (!foreground)
         return false;
 
-    // Non-UWP case: the foreground window is ours outright. The log console is
-    // ours too, so exclude it - otherwise the GUI reacts to keys typed there.
     if (ownedByUs(foreground))
         return !isConsole(foreground);
 
-    // UWP case: the foreground ApplicationFrameWindow belongs to
-    // ApplicationFrameHost.exe, and our CoreWindow sits inside it. Rather than
-    // rely on a cached handle or on GetAncestor behaving, just ask whether any
-    // descendant of the foreground window belongs to this process.
     bool ours = false;
     EnumChildWindows(
         foreground,
@@ -147,7 +132,7 @@ DWORD gameWindowThread() {
 namespace {
 DWORD g_attachedTo = 0;
 DWORD g_attachedFrom = 0;
-} // namespace
+}
 
 bool attachToGameInput() {
     const DWORD target = gameWindowThread();
@@ -213,4 +198,4 @@ bool screenToGame(POINT& point) {
     return window && ScreenToClient(window, &point);
 }
 
-} // namespace aerial::platform
+}

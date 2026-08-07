@@ -44,7 +44,7 @@ std::filesystem::path logDirectory() {
     return dir;
 }
 
-} // namespace
+}
 
 Logger& Logger::get() {
     static Logger instance;
@@ -65,9 +65,6 @@ void Logger::init(bool allocConsole) {
     if (!m_file) {
         const auto path = logDirectory() / L"latest.log";
 
-        // Append rather than truncate. Inject, eject and inject again is one
-        // debugging session, and truncating threw away the half that explained
-        // the other half.
         _wfopen_s(&m_file, path.c_str(), L"a");
         if (m_file)
             std::fputs("\n──── session start ────\n", m_file);
@@ -121,9 +118,8 @@ void Logger::write(LogLevel level, std::string_view tag, std::string_view messag
         std::fflush(m_file);
     }
 
-    // Always mirror to the debugger so logs survive a console-less release build.
     const auto line = std::format("[Aerial/{}] {}\n", tag, message);
     OutputDebugStringA(line.c_str());
 }
 
-} // namespace aerial
+}

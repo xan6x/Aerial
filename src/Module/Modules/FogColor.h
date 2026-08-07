@@ -8,7 +8,6 @@ struct Render2DEvent;
 
 namespace aerial::modules {
 
-// Replaces the fog colour the game computes each frame.
 class FogColor final : public Module {
 public:
     FogColor();
@@ -27,4 +26,4 @@ private:
     FloatSetting* m_rainbowSpeed;
 };
 
-} // namespace aerial::modules
+}

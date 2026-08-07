@@ -13,8 +13,6 @@ namespace {
 
 constexpr int kMaxReportsPerSite = 3;
 
-// Reporting lives outside the __except block's function so that block stays
-// free of anything needing C++ unwinding.
 void reportFault(const char* what, unsigned long code, void* address) {
     static std::mutex mutex;
     static std::unordered_map<std::string, int> counts;
@@ -41,15 +39,13 @@ struct FaultInfo {
     void* address = nullptr;
 };
 
-// Plain function so the __except filter stays free of closures; FaultInfo is
-// trivially destructible, which keeps runGuarded out of C2712 territory.
 int captureFault(EXCEPTION_POINTERS* info, FaultInfo& out) {
     out.code = info->ExceptionRecord->ExceptionCode;
     out.address = info->ExceptionRecord->ExceptionAddress;
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-} // namespace
+}
 
 bool runGuarded(const char* what, GuardedFn fn, void* data) {
     FaultInfo fault;
@@ -63,4 +59,4 @@ bool runGuarded(const char* what, GuardedFn fn, void* data) {
     }
 }
 
-} // namespace aerial
+}

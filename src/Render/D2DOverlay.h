@@ -13,49 +13,17 @@ struct IDXGISwapChain;
 
 namespace aerial::render {
 
-// Direct2D overlay drawn straight onto the game's swap chain.
-//
-// The game's own 2D renderer can only fill axis-aligned untextured quads and
-// blit a bitmap font, which is a hard ceiling on how the menu can look - no
-// rounded corners, no antialiasing, no real typography. Direct2D removes that
-// ceiling, at the cost of having to reach the swap chain first.
-//
-// Capture works the way every overlay does it: DXGI's vtable is shared by every
-// swap chain in the process, so creating a throwaway one is enough to learn the
-// address of Present and ResizeBuffers. A composition swap chain is used for
-// that because it needs no window, which matters inside the UWP AppContainer.
-// Detouring those addresses then intercepts the game's real swap chain, which
-// was created long before injection.
 class D2DOverlay {
 public:
     static D2DOverlay& get();
 
-    // Hooks Present/ResizeBuffers. Returns false if DXGI could not be reached at
-    // all; the client then stays on the game's renderer.
     bool install();
     void shutdown();
 
-    // Called inside Present, with the render target bound and ready.
     void setFrameCallback(std::function<void()> callback);
 
-    // True once a device context and target bitmap exist, the overlay is
-    // switched on, and it has not been given up on.
-    //
-    // Everything drawn goes wherever this says, so it is not a status line - it
-    // is the routing decision. Getting that wrong is what made the menu vanish
-    // on someone else's machine: the client had already decided to fall back to
-    // the game's renderer, but this still answered true, so every fill and every
-    // glyph went on landing in a Direct2D context that nothing was compositing.
-    // Drawn, counted in the statistics, and invisible.
     bool ready() const { return m_ready && m_enabled && !m_abandoned; }
 
-    // Runtime switch between the Direct2D overlay and the game's renderer.
-    // While off, Present is left completely alone - nothing is drawn and no
-    // pipeline state is touched - which makes it a one-click test for whether
-    // the overlay is behind a rendering problem.
-    //
-    // Switching it back on also clears a previous give-up, so the module toggle
-    // doubles as the manual retry.
     void setEnabled(bool enabled) {
         if (enabled)
             m_abandoned = false;
@@ -63,19 +31,14 @@ public:
     }
     bool enabled() const { return m_enabled; }
 
-    // Stop using the overlay for the rest of the session: it is present and
-    // reports itself healthy, but frames are not coming out of it. Safe to call
-    // from any thread, and only the first call is heard.
     void abandon(const char* why);
     bool abandoned() const { return m_abandoned; }
 
-    // Back buffer size in pixels.
     Vec2 size() const { return m_size; }
 
     ID2D1DeviceContext* context() const { return m_context; }
     IDWriteFactory* dwrite() const { return m_dwrite; }
 
-    // Why the overlay is unavailable, for the log and the watchdog line.
     const char* status() const { return m_status; }
 
 private:
@@ -88,8 +51,6 @@ private:
     void onPresent(IDXGISwapChain* swapChain);
     void onResize();
 
-    // Blends the overlay texture over the game's back buffer using the game's
-    // own device, restoring its pipeline state afterwards.
     void composite(IDXGISwapChain* swapChain);
     ID3D11RenderTargetView* currentTarget(IDXGISwapChain* swapChain);
 
@@ -106,11 +67,9 @@ private:
     bool m_installed = false;
     bool m_failed = false;
 
-    // Read on the render thread inside Present, written from whichever thread
-    // noticed the frames had stopped.
     std::atomic<bool> m_abandoned{false};
 
     const char* m_status = "not installed";
 };
 
-} // namespace aerial::render
+}

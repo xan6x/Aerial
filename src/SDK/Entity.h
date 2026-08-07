@@ -8,26 +8,20 @@
 
 namespace aerial::sdk {
 
-// Short aliases used only inside this header's class bodies.
 namespace ev = offsets::vidx::entity;
 namespace ef = offsets::field::entity;
 
-// Wrapper over the game's Entity. Never constructed by us - game pointers are
-// reinterpret_cast to this type, so it must stay layout-free (no members, no
-// virtuals of our own).
 class Entity {
 public:
     Entity() = delete;
     ~Entity() = delete;
 
-    // --- Direct fields (verified offsets) -----------------------------------
     Vec3& pos() { return fieldAt<Vec3>(this, ef::pos); }
     const Vec3& pos() const { return fieldAt<Vec3>(this, ef::pos); }
 
     Vec3& posOld() { return fieldAt<Vec3>(this, ef::posOld); }
     Vec3& velocity() { return fieldAt<Vec3>(this, ef::velocity); }
 
-    // rot.x is pitch, rot.y is yaw - both in degrees.
     Vec2& rot() { return fieldAt<Vec2>(this, ef::rot); }
     const Vec2& rot() const { return fieldAt<Vec2>(this, ef::rot); }
     Vec2& rotOld() { return fieldAt<Vec2>(this, ef::rotOld); }
@@ -35,7 +29,6 @@ public:
     float pitch() const { return rot().x; }
     float yaw() const { return rot().y; }
 
-    // Eye position - where rays and reach checks start.
     Vec3 eyePos() const {
         Vec3 p = pos();
         p.y += const_cast<Entity*>(this)->eyeHeight();
@@ -44,7 +37,6 @@ public:
 
     Vec3 lookDirection() const { return Vec3::fromAngles(rot()); }
 
-    // --- Virtual calls ------------------------------------------------------
     bool isAlive() const { return callVirtual<bool>(this, ev::isAlive); }
     bool isInWater() const { return callVirtual<bool>(this, ev::isInWater); }
     bool isInLava() const { return callVirtual<bool>(this, ev::isInLava); }
@@ -64,7 +56,6 @@ public:
     int entityTypeId() { return callVirtual<int>(this, ev::getEntityTypeId); }
     float pickRadius() { return callVirtual<float>(this, ev::getPickRadius); }
 
-    // Returns the entity's name tag; empty for unnamed mobs.
     const std::string& nameTag() const {
         static const std::string empty;
         const auto* name = callVirtual<const std::string*>(this, ev::getNameTag);
@@ -76,14 +67,11 @@ public:
     void lerpMotion(const Vec3& motion) { callVirtual<void>(this, ev::lerpMotion, &motion); }
     void swing() { callVirtual<void>(this, ev::swing); }
 
-    // --- Derived helpers ----------------------------------------------------
     float distanceTo(const Entity& other) const { return pos().distance(other.pos()); }
     float distanceTo(const Vec3& point) const { return pos().distance(point); }
 
-    // Entity type id 63 is Player in this build (Player::getEntityTypeId).
     bool isPlayer() { return entityTypeId() == 63; }
 
-    // Approximate hitbox built from the entity's own pick radius and height.
     AABB boundingBox() {
         const float radius = pickRadius() > 0.0f ? pickRadius() : 0.3f;
         const float rawHeight = fieldAt<float>(this, ef::bodyHeight);
@@ -93,7 +81,6 @@ public:
         return {{p.x - radius, feet, p.z - radius}, {p.x + radius, feet + height, p.z + radius}};
     }
 
-    // Pitch/yaw that aim at this entity's upper body from `from`.
     Vec2 anglesFrom(const Vec3& from) {
         return from.anglesTo(pos() + Vec3{0.0f, eyeHeight() * 0.9f, 0.0f});
     }
@@ -123,8 +110,6 @@ class LocalPlayer : public Player {
 public:
     LocalPlayer() = delete;
 
-    // Set during construction; the route Aerial uses to reach the client from
-    // any tick handler without needing a global.
     ClientInstance* clientInstance() const {
         return fieldAt<ClientInstance*>(this, offsets::field::localPlayer::clientInstance);
     }
@@ -134,4 +119,4 @@ public:
     }
 };
 
-} // namespace aerial::sdk
+}

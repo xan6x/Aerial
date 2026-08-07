@@ -8,8 +8,6 @@
 
 namespace aerial {
 
-// Base for every event. `cancel()` is only meaningful for events the hook layer
-// documents as cancellable — see Events.h.
 struct Event {
     bool cancelled = false;
 
@@ -18,7 +16,7 @@ struct Event {
 };
 
 namespace detail {
-// Cheap monotonic type ids — faster than typeid and avoids RTTI in hot paths.
+
 inline uint32_t nextEventTypeId() {
     static uint32_t counter = 0;
     return counter++;
@@ -29,11 +27,8 @@ inline uint32_t eventTypeId() {
     static const uint32_t id = nextEventTypeId();
     return id;
 }
-} // namespace detail
+}
 
-// Priority ordering: handlers run from highest to lowest. Modules that want the
-// last word on a cancellable event (e.g. a packet filter) subscribe with a high
-// priority; passive observers use the default.
 enum EventPriority : int {
     kPriorityLowest = -200,
     kPriorityLow = -100,
@@ -62,7 +57,6 @@ public:
         addEntry(detail::eventTypeId<E>(), std::move(entry));
     }
 
-    // Removes every handler registered with this owner, across all event types.
     void unsubscribe(void* owner);
 
     template <typename E>
@@ -72,7 +66,6 @@ public:
         return event;
     }
 
-    // Convenience for temporaries: bus.post<TickEvent>(player).
     template <typename E, typename... Args>
     E post(Args&&... args) {
         E event{std::forward<Args>(args)...};
@@ -100,12 +93,9 @@ private:
 
     std::unordered_map<uint32_t, std::vector<Entry>> m_handlers;
 
-    // Handlers may subscribe/unsubscribe while an event is being dispatched
-    // (a module toggling another module from a key handler, for example), so
-    // mutations are queued until the outermost dispatch finishes.
     int m_dispatchDepth = 0;
     std::vector<std::pair<uint32_t, Entry>> m_pendingAdds;
     std::vector<PendingRemoval> m_pendingRemovals;
 };
 
-} // namespace aerial
+}

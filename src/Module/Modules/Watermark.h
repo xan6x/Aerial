@@ -12,7 +12,6 @@ class Watermark final : public Module {
 public:
     Watermark();
 
-    // Draws the list's own furniture; listing it would be noise.
     bool listed() const override { return false; }
 
 private:
@@ -24,4 +23,4 @@ private:
     ColourSetting* m_colour;
 };
 
-} // namespace aerial::modules
+}

@@ -21,11 +21,6 @@ using render::DrawUtils;
 using Weight = DrawUtils::Weight;
 using Align = DrawUtils::Align;
 
-// Authored against a 1000-unit-tall screen; everything is multiplied by
-// DrawUtils::uiScale() so the menu keeps its proportions at any resolution.
-// A fixed, generous window. Sizing it to its content made it collapse to a
-// squat box whenever a category held few modules, and the empty area is not
-// waste - it is where the background character lives.
 constexpr float kWindowWidth = 900.0f;
 constexpr float kWindowHeight = 560.0f;
 constexpr float kRailWidth = 196.0f;
@@ -38,21 +33,12 @@ constexpr float kSettingHeight = 30.0f;
 constexpr float kRadius = 14.0f;
 constexpr float kCardRadius = 9.0f;
 
-// ── Opening ──────────────────────────────────────────────────────────────────
-// The window rides up into place from below rather than simply appearing. The
-// distance is in the same design units as the layout, so the travel is the same
-// proportion of the screen at any resolution and on either backend.
-//
-// Closing is quicker than opening on purpose: arriving is something to watch,
-// leaving is something to get out of the way.
 constexpr float kSlide = 58.0f;
 constexpr float kOpenSeconds = 0.24f;
 constexpr float kCloseSeconds = 0.15f;
 
-// How far behind the window its contents trail. Small - the rail and the cards
-// are meant to settle just after the panel lands, not to arrive separately.
 constexpr float kContentSlide = 22.0f;
-constexpr float kContentDelay = 0.18f;   // fraction of the transition
+constexpr float kContentDelay = 0.18f;
 
 const Category kCategories[] = {Category::Visuals, Category::Interface, Category::Input,
                                 Category::Client};
@@ -65,9 +51,6 @@ std::string formatValue(const Setting& setting) {
     return std::to_string(static_cast<const IntSetting&>(setting).value);
 }
 
-// Row heights follow the text metrics rather than fixed numbers, because the
-// fallback backend draws a bitmap font at one fixed size - a card sized purely
-// in design units ends up too short for it and the two lines collide.
 float cardHeightFor(float scale) {
     const float name = DrawUtils::textHeight(15.0f * scale);
     const float description = DrawUtils::textHeight(11.5f * scale);
@@ -78,7 +61,6 @@ float settingHeightFor(float scale) {
     return std::max(kSettingHeight * scale, DrawUtils::textHeight(12.5f * scale) + 16.0f * scale);
 }
 
-// Right-aligned capsule holding a setting's current value.
 Rect valuePill(const Rect& row, const std::string& value, float scale) {
     const float width =
         std::max(38.0f * scale, DrawUtils::textWidth(value, 12.5f * scale, Weight::Medium) + 18.0f * scale);
@@ -88,10 +70,6 @@ Rect valuePill(const Rect& row, const std::string& value, float scale) {
             row.right - kPadding * scale, centreY + height * 0.5f};
 }
 
-// A slider is a 4px line, and 4px is not something anyone can be asked to hit.
-// The track is what gets drawn; the grab box is what answers the mouse, and it
-// is the full height of the row plus a knob's worth of overhang at each end so
-// the ends are reachable rather than just the middle.
 Rect sliderTrack(const Rect& row, float scale) {
     const float width = 108.0f * scale;
     const float y = row.top + row.height() * 0.5f;
@@ -110,31 +88,22 @@ std::string lowered(std::string value) {
     return value;
 }
 
-// Name first, then the description - so "fov" finds JavaFov, and "sprint" also
-// finds it through "Java's sprint field-of-view easing".
 bool matchesSearch(const Module& module, const std::string& query) {
     const std::string needle = lowered(query);
     return lowered(module.name()).find(needle) != std::string::npos ||
            lowered(module.description()).find(needle) != std::string::npos;
 }
 
-// Ease-out cubic: fast start, soft landing. Used for the open transition.
-//
-// It is applied to a linear 0..1 timeline rather than to an exponential
-// smoother, which is what the open used to be. Exponential smoothing never
-// actually reaches its target, so the last stretch of the movement was too slow
-// to see and the menu read as a fade instead of as something arriving.
 float easeOut(float t) {
     const float inverted = 1.0f - t;
     return 1.0f - inverted * inverted * inverted;
 }
 
-// The same timeline, started late and still finishing on time.
 float delayed(float t, float delay) {
     return std::clamp((t - delay) / std::max(0.01f, 1.0f - delay), 0.0f, 1.0f);
 }
 
-} // namespace
+}
 
 ClickGui& ClickGui::get() {
     static ClickGui instance;
@@ -181,10 +150,6 @@ ClickGui::ScrollState& ClickGui::activeScroll() {
 void ClickGui::open() {
     m_open = true;
 
-    // The menu owns the keyboard and the mouse while it is up. Cancelling our
-    // own events is not enough - the game reads the same devices from its own
-    // message queue, so without this a click on a card also swung the arm and
-    // Escape opened the pause screen behind the menu.
     input::InputManager::get().setSwallowInput(true);
 
     auto& context = sdk::Context::get();
@@ -208,11 +173,6 @@ void ClickGui::close() {
     input::InputManager::get().setCapture(false);
     input::InputManager::get().setSwallowInput(false);
 
-    // Restore the cursor if - and only if - we were the ones who released it.
-    // Gating this on inGame() the way open() does was a bug: open in a world and
-    // close after leaving it, and the grab never happened, leaving the game in
-    // its cursor-released state. That state is also what hides the hand, the
-    // hotbar and the chat, so the HUD stayed gone until the next restart.
     auto& context = sdk::Context::get();
     if (m_releasedMouse && context.client) {
         context.client->grabMouse();
@@ -236,7 +196,6 @@ ClickGui::Layout ClickGui::computeLayout(const Vec2& screenSize, float amount) c
     Layout layout;
     layout.scale = DrawUtils::uiScale();
 
-    // Shrink to fit a short screen rather than hanging off it.
     const float fit = std::min(1.0f, (screenSize.y - 40.0f) / (kWindowHeight * layout.scale));
     layout.scale *= fit;
 
@@ -244,8 +203,6 @@ ClickGui::Layout ClickGui::computeLayout(const Vec2& screenSize, float amount) c
     const float height = kWindowHeight * layout.scale;
     const float left = (screenSize.x - width) * 0.5f;
 
-    // The whole layout moves together, hit areas included, so a click during
-    // the transition still lands on what is drawn under the cursor.
     const float top =
         (screenSize.y - height) * 0.5f + (1.0f - amount) * kSlide * layout.scale;
 
@@ -255,21 +212,15 @@ ClickGui::Layout ClickGui::computeLayout(const Vec2& screenSize, float amount) c
     layout.content = {layout.rail.right, layout.header.bottom, layout.window.right,
                       layout.window.bottom};
 
-    // Cards span the full content width; the artwork sits behind them and shows
-    // through their translucent surface.
     layout.cardsRight = layout.content.right;
     return layout;
 }
 
 void ClickGui::render(Render2DEvent& event) {
-    // A fixed-length timeline rather than a per-frame lerp, so the menu takes
-    // the same quarter of a second to arrive whatever the framerate is.
+
     const float step = frameDelta() / (m_open ? kOpenSeconds : kCloseSeconds);
     m_transition = std::clamp(m_transition + (m_open ? step : -step), 0.0f, 1.0f);
 
-    // Safety net for the cursor: whatever route the menu took to close, the
-    // game must not be left in its released state - that is what hides the
-    // hand, the hotbar and the chat.
     if (!m_open && m_releasedMouse) {
         if (auto* client = sdk::Context::get().client) {
             client->grabMouse();
@@ -278,15 +229,11 @@ void ClickGui::render(Render2DEvent& event) {
     }
 
     if (!m_open && m_transition <= 0.0f) {
-        // Nothing is on screen, so nothing may answer a click either. Leaving
-        // the last frame's rectangles behind is how a closed menu could still
-        // be clicked on through the game.
+
         m_hits.clear();
         return;
     }
 
-    // Running the same ease backwards is what makes the close start gently and
-    // then drop away, which is the right shape for leaving.
     const float amount = easeOut(m_transition);
     const float contents = easeOut(delayed(m_transition, kContentDelay));
 
@@ -297,7 +244,6 @@ void ClickGui::render(Render2DEvent& event) {
     const Layout layout = computeLayout(event.screenSize, amount);
     m_contentSlide = (1.0f - contents) * kContentSlide * layout.scale;
 
-    // Scrim over the world, so the menu reads as a focused surface.
     DrawUtils::fill({0.0f, 0.0f, event.screenSize.x, event.screenSize.y},
                     Colour::rgb(0x05070C, 0.55f * amount));
 
@@ -305,10 +251,6 @@ void ClickGui::render(Render2DEvent& event) {
     renderCharacter(layout, amount);
     renderRail(layout, amount);
 
-    // Everything from here on is inside the scrolling viewport. Its hit areas
-    // are drawn clipped, so they have to be tested clipped too - otherwise a row
-    // that has scrolled out of sight still answers clicks from wherever it
-    // happens to sit.
     const size_t contentHits = m_hits.size();
 
     if (m_page == Page::Configs)
@@ -323,18 +265,6 @@ void ClickGui::render(Render2DEvent& event) {
                                 }),
                  m_hits.end());
 
-    // A drag is followed here rather than from mouse events, because there is no
-    // move event to follow: the cursor is sampled, not messaged. The button
-    // state is what ends it, and only that - leaving the row, or the window, or
-    // the screen does not, which is what "grab and pull" has to mean.
-    //
-    // The held state comes from InputManager and not from GetAsyncKeyState. This
-    // runs on the game's render thread, and in this process that thread cannot
-    // read key state at all - the call returned "not held" on every frame, so a
-    // drag was dropped the moment after it started and a slider could only ever
-    // be tapped. InputManager samples on the client's own thread, which is the
-    // one that works here; it is also where the press that began the drag came
-    // from, so the two ends agree.
     if (m_draggingSlider) {
         if (input::InputManager::get().isDown(VK_LBUTTON))
             dragSliderTo(m_cursor.x);
@@ -350,7 +280,6 @@ void ClickGui::renderChrome(const Layout& layout, float amount) {
     const Theme& theme = Theme::get();
     const float scale = layout.scale;
 
-    // The window slides up a little as it fades in.
     const float radius = kRadius * scale;
 
     DrawUtils::shadow(layout.window, Colour::rgb(0x000000, 0.55f * amount), 22.0f * scale, radius,
@@ -360,7 +289,6 @@ void ClickGui::renderChrome(const Layout& layout, float amount) {
     DrawUtils::fill(layout.window, theme.background.withAlpha(theme.background.a * amount), radius);
     DrawUtils::outline(layout.window, Colour::rgb(0xFFFFFF, 0.09f * amount), 1.0f * scale, radius);
 
-    // Header: wordmark, version, and a hairline separator.
     const Vec2 title{layout.header.left + kPadding * 1.4f * scale,
                      layout.header.top + 17.0f * scale};
     DrawUtils::text("Aerial", title, theme.textActive.withAlpha(amount), 21.0f * scale,
@@ -374,8 +302,6 @@ void ClickGui::renderChrome(const Layout& layout, float amount) {
                      layout.window.right - kPadding * scale, layout.header.bottom},
                     Colour::rgb(0xFFFFFF, 0.07f * amount));
 
-    // Key hints, laid out right to left: close first, then eject furthest from
-    // the list so it is the one you have to reach for deliberately.
     const float hintSize = 12.0f * scale;
     const float hintY = title.y + 6.0f * scale;
     const float hintRight = layout.header.right - kPadding * 1.4f * scale;
@@ -401,9 +327,6 @@ void ClickGui::renderChrome(const Layout& layout, float amount) {
 
     const float hintWidth = hintRight - x;
 
-    // Search sits between the wordmark and the close hint. In the header rather
-    // than above the list so it never scrolls away, and so it works the same on
-    // whichever page is showing.
     const float fieldHeight = 26.0f * scale;
     const float fieldRight = layout.header.right - kPadding * 2.2f * scale - hintWidth;
     const float fieldLeft = std::max(title.x + titleWidth + 70.0f * scale,
@@ -427,8 +350,6 @@ void ClickGui::renderSearch(const Rect& field, float scale, float amount) {
                                    : Colour::rgb(0xFFFFFF, (hovered ? 0.14f : 0.07f) * amount),
                        1.0f * scale, radius);
 
-    // A drawn lens rather than a glyph: the fallback backend has no icon font,
-    // and two circles plus a line cost nothing.
     const float lens = 4.6f * scale;
     const Vec2 eye{field.left + 13.0f * scale, field.top + field.height() * 0.5f};
     const Colour icon = (m_searching ? theme.text : theme.textDim).withAlpha(0.85f * amount);
@@ -441,8 +362,6 @@ void ClickGui::renderSearch(const Rect& field, float scale, float amount) {
     const float textLeft = eye.x + lens + 8.0f * scale;
     const float textY = field.top + (field.height() - DrawUtils::textHeight(12.5f * scale)) * 0.5f;
 
-    // Room for the clear button and the result count, when there is something to
-    // clear. Without the reserve the query runs straight under them.
     const bool empty = m_search.empty();
     const float textRight = field.right - (empty ? 12.0f * scale : 56.0f * scale);
     const std::string shown = empty ? "Search modules" : m_search;
@@ -461,8 +380,6 @@ void ClickGui::renderSearch(const Rect& field, float scale, float amount) {
         }
     }
 
-    // Pushed before the clear button: hits are tested last-first, so the smaller
-    // control has to come second to win.
     m_hits.push_back({field, HitKind::SearchField, nullptr, nullptr, Category::Client, {}});
 
     if (!empty) {
@@ -481,8 +398,6 @@ void ClickGui::renderSearch(const Rect& field, float scale, float amount) {
 
         m_hits.push_back({clear, HitKind::SearchClear, nullptr, nullptr, Category::Client, {}});
 
-        // Result count, so an empty result set is obviously empty rather than
-        // looking like a category that happens to hold nothing.
         const size_t found = visibleModules().size();
         DrawUtils::text(std::format("{}", found),
                         {clear.left - 6.0f * scale, textY},
@@ -504,16 +419,11 @@ void ClickGui::renderCharacter(const Layout& layout, float amount) {
     const auto* opacity =
         module ? dynamic_cast<const FloatSetting*>(module->findSetting("Character opacity")) : nullptr;
 
-    // Sized to the content area and anchored to its bottom-right corner. No
-    // scrim: the cards above are translucent, so the artwork is meant to read
-    // through them rather than being faded out behind them.
     const float height = layout.content.height();
     const float width = height * aspect;
     const Rect area{layout.content.right - width, layout.window.bottom - height,
                     layout.content.right, layout.window.bottom};
 
-    // Two clips: the window's rounded corners, then the content area, so the
-    // artwork never rides up into the header.
     DrawUtils::pushClip(layout.window, kRadius * layout.scale);
     DrawUtils::pushClip(layout.content);
 
@@ -527,8 +437,6 @@ void ClickGui::renderRail(const Layout& layout, float amount) {
     const Theme& theme = Theme::get();
     const float scale = layout.scale;
 
-    // Hairline between the rail and the cards, so the two columns read as
-    // separate regions rather than as one loose grid.
     DrawUtils::fill({layout.rail.right - 0.5f * scale, layout.rail.top + 6.0f * scale,
                      layout.rail.right + 0.5f * scale, layout.rail.bottom - 10.0f * scale},
                     Colour::rgb(0xFFFFFF, 0.06f * amount));
@@ -542,7 +450,6 @@ void ClickGui::renderRail(const Layout& layout, float amount) {
         const Rect item{layout.rail.left + kPadding * scale, y,
                         layout.rail.right - kPadding * 0.5f * scale, y + itemHeight};
 
-        // A live search spans every category, so none of them is "the" one.
         const bool selected = m_page == Page::Modules && m_search.empty() && category == m_category;
         const bool hovered = item.contains(m_cursor);
         const bool empty = modules.empty();
@@ -553,7 +460,7 @@ void ClickGui::renderRail(const Layout& layout, float amount) {
 
         if (glow > 0.01f) {
             DrawUtils::fill(item, Colour::rgb(0xFFFFFF, 0.07f * glow * amount), 8.0f * scale);
-            // Selection pill on the left edge.
+
             const float pillHeight = item.height() * 0.5f * glow;
             const float centre = item.top + item.height() * 0.5f;
             DrawUtils::fill({item.left - 6.0f * scale, centre - pillHeight * 0.5f,
@@ -582,8 +489,6 @@ void ClickGui::renderRail(const Layout& layout, float amount) {
         y += itemHeight + 3.0f * scale;
     }
 
-    // Configs live below a separator: they are not a module category, and
-    // grouping them with one would imply they are.
     y += 6.0f * scale;
     DrawUtils::fill({layout.rail.left + kPadding * scale + 6.0f * scale, y,
                      layout.rail.right - kPadding * scale, y + 1.0f * scale},
@@ -633,8 +538,6 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
         return;
     }
 
-    // Clamped here rather than at the wheel, because the extent is only known
-    // once the list has been measured - and it changes as cards expand.
     m_moduleScroll.position.set(std::clamp(m_moduleScroll.position.target(), 0.0f, m_moduleScroll.max));
     const float scrolled = m_moduleScroll.position.update(theme.animationSpeed);
 
@@ -642,8 +545,6 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
     float y = top - scrolled + m_contentSlide;
     int index = 0;
 
-    // Give the scrollbar its own gutter once there is one, so the thumb never
-    // sits on top of a toggle.
     const float right = layout.cardsRight - kPadding * 1.4f * scale -
                         (m_moduleScroll.max > 0.5f ? 9.0f * scale : 0.0f);
 
@@ -651,9 +552,6 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
         const float cardHeight = cardHeightFor(scale);
         const bool expanded = m_expanded[module];
 
-        // Measure the whole group up front so the card and its settings share
-        // one surface. Loose rows floating on the panel read as unrelated to
-        // the module they belong to.
         float settingsHeight = 0.0f;
         if (expanded) {
             for (const auto& setting : module->settings()) {
@@ -668,9 +566,6 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
                          y + cardHeight + settingsHeight};
         const Rect card{group.left, group.top, group.right, group.top + cardHeight};
 
-        // Rows scrolled out of view are skipped outright. Drawing them would be
-        // clipped away anyway, but they would still take hover and still record
-        // hit areas, so a card off the top of the list could answer a click.
         const bool visible =
             group.bottom > layout.content.top && group.top < layout.content.bottom;
         const int cardIndex = index++;
@@ -680,9 +575,6 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
             hover.set(card.contains(m_cursor) ? 1.0f : 0.0f);
             const float lift = hover.update(theme.animationSpeed);
 
-            // Deliberately translucent: an opaque body would slice the artwork
-            // behind it into strips, which is exactly how the previous attempt
-            // went wrong. Readability comes from the text weight and shadow.
             const float radius = kCardRadius * scale;
             DrawUtils::fill(group, Colour::rgb(0xFFFFFF, 0.045f + 0.035f * lift), radius);
             DrawUtils::outline(group, Colour::rgb(0xFFFFFF, 0.05f + 0.04f * lift), 1.0f * scale,
@@ -708,9 +600,6 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
         y = group.bottom + kCardGap * scale;
     }
 
-    // The opening slide is a drawing offset, not content: measuring the list
-    // with it still applied would make the scroll extent grow and shrink as the
-    // menu arrives.
     const float contentHeight = (y + scrolled - m_contentSlide) - top + kPadding * scale;
     m_moduleScroll.max = std::max(0.0f, contentHeight - layout.content.height());
 
@@ -733,7 +622,6 @@ void ClickGui::renderScrollbar(const Rect& view, const ScrollState& scroll, floa
 
     DrawUtils::fill(track, Colour::rgb(0xFFFFFF, 0.05f * amount), width * 0.5f);
 
-    // Proportional thumb, floored so it stays grabbable in a very long list.
     const float fraction = std::clamp(view.height() / contentHeight, 0.0f, 1.0f);
     const float thumbHeight = std::max(26.0f * scale, track.height() * fraction);
     const float travel = track.height() - thumbHeight;
@@ -756,8 +644,6 @@ float ClickGui::renderCard(Module& module, const Rect& card, float scale, int in
     const float radius = kCardRadius * scale;
     const Colour accent = theme.menuAccent(index);
 
-    // The surface belongs to the group drawn by the caller; only the state
-    // decoration is drawn here.
     if (active > 0.01f) {
         DrawUtils::gradient({card.left, card.top, card.left + card.width() * 0.55f, card.bottom},
                             accent.withAlpha(0.16f * active), accent.withAlpha(0.0f), false, radius);
@@ -766,8 +652,6 @@ float ClickGui::renderCard(Module& module, const Rect& card, float scale, int in
                         accent.withAlpha(active), 1.5f * scale);
     }
 
-    // Everything right of this belongs to the switch and the expander, so text
-    // is fitted to what is left rather than allowed to run under them.
     const float textLeft = card.left + 14.0f * scale;
     const float textRight = card.right - 62.0f * scale -
                             (module.settings().size() > 1 ? 40.0f * scale : 0.0f);
@@ -793,7 +677,6 @@ float ClickGui::renderCard(Module& module, const Rect& card, float scale, int in
     DrawUtils::text(DrawUtils::fit(module.description(), available, 11.5f * scale), {name.x, descriptionY},
                     theme.textDim, 11.5f * scale, Weight::Regular);
 
-    // Toggle switch.
     const float switchWidth = 34.0f * scale;
     const float switchHeight = 18.0f * scale;
     const Rect track{card.right - 16.0f * scale - switchWidth,
@@ -810,8 +693,6 @@ float ClickGui::renderCard(Module& module, const Rect& card, float scale, int in
                      knobY + knobRadius},
                     Colour::rgb(0xFFFFFF, 0.95f), knobRadius);
 
-    // Expander, only when the module has more than its keybind. It gets its own
-    // padded, hoverable square instead of sitting flush against the switch.
     if (module.settings().size() > 1) {
         const float side = 22.0f * scale;
         const float centreY = card.top + card.height() * 0.5f;
@@ -855,8 +736,6 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
     DrawUtils::text(DrawUtils::fit(setting.name(), row.width() * 0.45f, 12.5f * scale), label,
                     theme.textDim, 12.5f * scale, Weight::Regular);
 
-    // Filled in by the slider cases and recorded with the hit, so a drag works
-    // against the geometry that was actually drawn.
     Rect track;
     Rect grab;
 
@@ -897,8 +776,6 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
         DrawUtils::fill({track.left, track.top, filled, track.bottom}, theme.accent,
                         track.height() * 0.5f);
 
-        // The knob grows under the cursor and again while held, so it reads as
-        // something to take hold of rather than a dot to aim at.
         Animated& lift = animation(&setting);
         lift.set(dragging ? 1.0f : (overGrab ? 0.5f : 0.0f));
         const float grown = lift.update(theme.animationSpeed);
@@ -926,8 +803,6 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
         const auto& choice = static_cast<EnumSetting&>(setting);
         const Rect pill = valuePill(row, choice.selected(), scale);
 
-        // At 6% white these pills were invisible; they need a readable body and
-        // an edge to look like something you can click.
         DrawUtils::fill(pill, Colour::rgb(0xFFFFFF, 0.10f), pill.height() * 0.5f);
         DrawUtils::outline(pill, Colour::rgb(0xFFFFFF, 0.08f), 1.0f * scale, pill.height() * 0.5f);
         DrawUtils::text(choice.selected(),
@@ -1005,7 +880,6 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
     const float top = layout.content.top + kPadding * scale;
     float y = top - scrolled + m_contentSlide;
 
-    // ── New config ───────────────────────────────────────────────────────────
     const float rowHeight = 36.0f * scale;
     const Rect newRow{left, y, right, y + rowHeight};
     DrawUtils::fill(newRow, Colour::rgb(0xFFFFFF, 0.045f), kCardRadius * scale);
@@ -1030,7 +904,7 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
                     13.0f * scale, Weight::Regular);
 
     if (m_editingName) {
-        // Blinking caret, so it is obvious the field is taking keystrokes.
+
         const float phase = std::fmod(clockSeconds(), 1.0f);
         if (phase < 0.55f) {
             const float caretX =
@@ -1048,7 +922,6 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
 
     y = newRow.bottom + kCardGap * scale * 1.6f;
 
-    // ── Saved configs ────────────────────────────────────────────────────────
     const auto names = config.list();
     if (names.empty()) {
         DrawUtils::text("No saved configs yet",
@@ -1064,9 +937,6 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
     for (const std::string& name : names) {
         const Rect card{left, y, right, y + 42.0f * scale};
 
-        // The list used to stop at the bottom edge, which is why a long list
-        // simply lost its tail. It scrolls now, so rows off either edge are
-        // skipped rather than the loop being cut short.
         if (card.bottom <= layout.content.top || card.top >= layout.content.bottom) {
             y = card.bottom + kCardGap * scale;
             continue;
@@ -1097,7 +967,6 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
                             theme.menuAccent().withAlpha(0.85f), 11.5f * scale, Weight::Medium);
         }
 
-        // Delete sits furthest from Load so a misclick does not destroy a config.
         const float buttonHeight = 22.0f * scale;
         const float buttonY = card.top + (card.height() - buttonHeight) * 0.5f;
         const float small = 58.0f * scale;
@@ -1153,14 +1022,12 @@ void ClickGui::renderCursor(float scale) {
     const Vec2 c = m_cursor;
 
     if (!DrawUtils::usingD2D()) {
-        // The fallback backend has no geometry; a crosshair is the best it can do.
+
         DrawUtils::fill({c.x, c.y, c.x + 8.0f, c.y + 2.0f}, Colour::rgb(0xFFFFFF));
         DrawUtils::fill({c.x, c.y, c.x + 2.0f, c.y + 8.0f}, Colour::rgb(0xFFFFFF));
         return;
     }
 
-    // A real arrow. The dot this replaced was easy to lose against the artwork
-    // and gave no sense of where the click actually lands.
     const float s = scale;
     const Vec2 shape[] = {
         {c.x, c.y},
@@ -1172,8 +1039,6 @@ void ClickGui::renderCursor(float scale) {
         {c.x + 12.0f * s, c.y + 10.2f * s},
     };
 
-    // Outline first, as the same shape nudged outwards, so the pointer stays
-    // visible on both the pale artwork and the dark panel.
     Vec2 outline[std::size(shape)];
     for (size_t i = 0; i < std::size(shape); ++i) {
         outline[i] = {c.x + (shape[i].x - c.x) * 1.16f + 0.6f * s,
@@ -1192,8 +1057,7 @@ void ClickGui::onMouse(MouseEvent& event) {
 
     if (event.button == MouseEvent::Button::ScrollUp ||
         event.button == MouseEvent::Button::ScrollDown) {
-        // Three rows a detent, in the same design units the layout is authored
-        // in, so the feel does not change with resolution.
+
         activeScroll().nudge(-event.wheel * 3.0f * cardHeightFor(DrawUtils::uiScale()));
         return;
     }
@@ -1210,11 +1074,10 @@ void ClickGui::onMouse(MouseEvent& event) {
 }
 
 void ClickGui::handleClick(const Vec2& cursor, bool right) {
-    // Clicking anywhere but a text field gives up the caret.
+
     bool keepEditing = false;
     bool keepSearching = false;
 
-    // Later hits are drawn on top, so test in reverse.
     for (auto it = m_hits.rbegin(); it != m_hits.rend(); ++it) {
         if (!it->area.contains(cursor))
             continue;
@@ -1224,8 +1087,7 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
         switch (it->kind) {
         case HitKind::Category:
             m_page = Page::Modules;
-            // Picking a category is an explicit "show me this instead", so it
-            // drops the search rather than filtering inside it.
+
             m_search.clear();
             m_searching = false;
             m_category = it->category;
@@ -1316,8 +1178,6 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
     if (!keepSearching && m_searching)
         m_searching = false;
 
-    // Capture belongs to whichever field still has the caret; releasing it while
-    // the other one is live would let keystrokes fall through to keybinds.
     if (!m_editingName && !m_searching && !m_bindingModule)
         input::InputManager::get().setCapture(false);
 }
@@ -1348,10 +1208,7 @@ void ClickGui::applySettingClick(const Hit& hit, const Vec2& cursor, bool right)
 
     case Setting::Type::Float:
     case Setting::Type::Int:
-        // Only the slider answers, not the whole row. The row is mostly the
-        // setting's name, and a click there used to snap the value to zero -
-        // which is how a stray click on the label could quietly turn something
-        // off.
+
         if (!hit.grab.contains(cursor))
             break;
 
@@ -1375,9 +1232,7 @@ void ClickGui::onKey(KeyEvent& event) {
 
         switch (event.key) {
         case VK_ESCAPE:
-            // First Escape drops the query, second closes the menu. Leaving the
-            // filter behind after leaving the field would hide the categories
-            // with no obvious way back.
+
             m_searching = false;
             m_search.clear();
             m_moduleScroll.reset();
@@ -1459,7 +1314,6 @@ void ClickGui::onKey(KeyEvent& event) {
         return;
     }
 
-    // Keyboard scrolling, for the case the wheel hook could not attach.
     ScrollState& scroll = activeScroll();
     const float page = std::max(1.0f, DrawUtils::screenSize().y * 0.45f);
 
@@ -1477,8 +1331,7 @@ void ClickGui::onKey(KeyEvent& event) {
         event.cancel();
         return;
     case VK_END:
-        // Deliberately not bound: End unloads the client, and stealing it here
-        // would leave no way out if the menu got stuck open.
+
         break;
     default:
         break;
@@ -1490,4 +1343,4 @@ void ClickGui::onKey(KeyEvent& event) {
     }
 }
 
-} // namespace aerial::gui
+}

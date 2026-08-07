@@ -8,9 +8,6 @@ struct Render2DEvent;
 
 namespace aerial::modules {
 
-// Dropped items turn while they fall and come to rest when they land, instead of
-// staying flat sprites that always face the camera. Blocks settle tipped onto a
-// corner, other items lie flat, the way Java's do.
 class ItemPhysics final : public Module {
 public:
     ItemPhysics();
@@ -31,4 +28,4 @@ private:
     BoolSetting* m_flat;
 };
 
-} // namespace aerial::modules
+}

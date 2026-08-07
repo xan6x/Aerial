@@ -26,7 +26,7 @@ float framesPerSecond() {
     return smoothed;
 }
 
-} // namespace
+}
 
 Watermark::Watermark() : Module("Watermark", "Client logo in the corner", Category::Interface) {
     m_style = addEnum("Style", "Watermark appearance", {"Modern", "Simple"}, 0);
@@ -75,4 +75,4 @@ void Watermark::onRender(Render2DEvent& event) {
                     theme.textDim, 12.0f * s, DrawUtils::Weight::Medium);
 }
 
-} // namespace aerial::modules
+}

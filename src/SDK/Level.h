@@ -8,8 +8,6 @@
 
 namespace aerial::sdk {
 
-// Read-only view over one of the game's std::vector members, which are laid out
-// as three pointers: first, last, end-of-storage.
 template <typename T>
 struct VectorView {
     T* first = nullptr;
@@ -27,9 +25,6 @@ class GameMode {
 public:
     GameMode() = delete;
 
-    // GameMode::attack(this, Player& player, Entity& target) — vtable index 14.
-    // Verified: the body tail-calls Player::attack after a reach/invulnerability
-    // check, so this is the same path a real click takes.
     void attack(Player* player, Entity* target) {
         callVirtual<void>(this, offsets::vidx::gameMode::attack, player, target);
     }
@@ -49,11 +44,9 @@ class Level {
 public:
     Level() = delete;
 
-    // Level+0x30/+0x38 are the begin/end of the player list — Level::
-    // getPrimaryLocalPlayer walks exactly this range.
     VectorView<Player*> players() const {
         return fieldAt<VectorView<Player*>>(this, offsets::field::level::players);
     }
 };
 
-} // namespace aerial::sdk
+}

@@ -21,11 +21,7 @@
 namespace aerial {
 namespace {
 
-// Identity of the Minecraft.Windows.exe 1.1.5 build every offset in
-// SDK/Offsets.h was taken from, read straight out of the IDA database's PE
-// header. Detouring a different binary at these addresses would corrupt the
-// process, so startup refuses to continue on a mismatch.
-constexpr uint32_t kExpectedTimestamp = 0x5976DA7B;  // 2017-07-25
+constexpr uint32_t kExpectedTimestamp = 0x5976DA7B;
 constexpr uint32_t kExpectedImageSize = 0x1A91000;
 
 struct BuildInfo {
@@ -52,7 +48,7 @@ BuildInfo readBuildInfo() {
     return info;
 }
 
-} // namespace
+}
 
 Aerial& Aerial::get() {
     static Aerial instance;
@@ -83,13 +79,11 @@ void Aerial::startup(void* moduleHandle) {
     Logger::get().init(true);
     LOG_INFO("Aerial", "AerialClient " AERIAL_VERSION " starting");
 
-    // Before anything is hooked, so a fault during startup is reported too.
     crash::install();
 
     const bool buildMatches = verifyGameBuild();
     if (!buildMatches) {
-        // Refuse to hook a binary the offsets were not built for: a wrong
-        // detour target is an instant crash, and a silent one.
+
         LOG_ERROR("Aerial", "aborting startup - wrong game build");
         MessageBoxW(nullptr,
                     L"AerialClient targets Minecraft: Windows 10 Edition 1.1.5.\n"
@@ -103,11 +97,7 @@ void Aerial::startup(void* moduleHandle) {
     ModuleManager::get().registerAll();
 
     if (!hooks::installAll()) {
-        // Some detours may already be created and enabled. Leaving them behind
-        // would be fatal: this thread unloads the DLL on the way out, and every
-        // detour that survived would then be a jump into a hole in the address
-        // space. That is exactly the crash a failed startup used to cause on the
-        // next injection.
+
         LOG_ERROR("Aerial", "hook installation failed - rolling back");
 
         input::InputManager::get().removeMessageHook();
@@ -135,25 +125,16 @@ void Aerial::shutdown() {
 
     Config::get().save();
 
-    // Close the menu on the game's own thread. close() hands the cursor back
-    // through ClientInstance::grabMouse, and this thread has no business calling
-    // into the game's state - it is the one that read a key, nothing more.
     LOG_DEBUG("Aerial", "teardown: menu");
     if (!hooks::requestTeardown(500))
         gui::ClickGui::get().close();
 
-    // Message hooks first, so the drain inside removeAll() covers them too.
-    // Unhooking does not wait for callbacks already running, and by this point
-    // there is one parked on every thread in the process.
     LOG_DEBUG("Aerial", "teardown: message hook");
     input::InputManager::get().removeMessageHook();
 
     LOG_DEBUG("Aerial", "teardown: detours");
     hooks::removeAll();
 
-    // Only now is it certain no Present can run, which is what makes releasing
-    // the shared texture and both devices safe. Skipping this leaked an entire
-    // D3D11 device per inject/eject cycle.
     LOG_DEBUG("Aerial", "teardown: overlay");
     render::DrawUtils::releaseResources();
     render::D2DOverlay::get().shutdown();
@@ -165,10 +146,8 @@ void Aerial::shutdown() {
 
     LOG_INFO("Aerial", "unloaded");
 
-    // Last, and only now: until this point the handler is what would report a
-    // fault raised by the teardown itself.
     crash::remove();
     Logger::get().shutdown();
 }
 
-} // namespace aerial
+}

@@ -9,4 +9,4 @@ public:
     AutoSprint();
 };
 
-} // namespace aerial::modules
+}

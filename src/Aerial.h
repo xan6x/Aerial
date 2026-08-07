@@ -4,8 +4,6 @@
 
 namespace aerial {
 
-// Client lifecycle. Startup runs on a dedicated thread created by DllMain so
-// nothing blocks the loader lock; shutdown runs on the eject thread.
 class Aerial {
 public:
     static Aerial& get();
@@ -29,4 +27,4 @@ private:
     std::atomic<bool> m_shutdownRequested{false};
 };
 
-} // namespace aerial
+}

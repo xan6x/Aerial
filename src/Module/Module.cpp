@@ -19,18 +19,17 @@ const char* categoryName(Category category) {
 
 const char* categoryIcon(Category category) {
     switch (category) {
-    case Category::Visuals:   return "\xE2\x97\x88";  // diamond
-    case Category::Interface: return "\xE2\x96\xA4";  // panel
-    case Category::Input:     return "\xE2\x86\x92";  // arrow
-    case Category::Client:    return "\xE2\x98\x85";  // star
+    case Category::Visuals:   return "\xE2\x97\x88";
+    case Category::Interface: return "\xE2\x96\xA4";
+    case Category::Input:     return "\xE2\x86\x92";
+    case Category::Client:    return "\xE2\x98\x85";
     }
     return "?";
 }
 
 Module::Module(std::string name, std::string description, Category category, int defaultKey)
     : m_name(std::move(name)), m_description(std::move(description)), m_category(category) {
-    // Every module owns a keybind setting so the GUI and config treat binds
-    // uniformly with the rest of its state.
+
     m_keybind = add<KeybindSetting>("Keybind", "Toggles this module", defaultKey);
 }
 
@@ -93,4 +92,4 @@ TextSetting* Module::addText(std::string name, std::string description, std::str
     return add<TextSetting>(std::move(name), std::move(description), std::move(value));
 }
 
-} // namespace aerial
+}

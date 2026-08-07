@@ -10,14 +10,10 @@
 namespace aerial {
 struct ModuleToggleEvent;
 struct Render2DEvent;
-} // namespace aerial
+}
 
 namespace aerial::modules {
 
-// Toast popups with a soft two-note chime. Other code posts through the static
-// push(), so anything in the client can raise a notification:
-//
-//     modules::Notifications::push("Config saved", Notifications::Level::Success);
 class Notifications final : public Module {
 public:
     enum class Level { Info, Success, Warning, Error };
@@ -58,4 +54,4 @@ private:
     float m_builtVolume = -1.0f;
 };
 
-} // namespace aerial::modules
+}

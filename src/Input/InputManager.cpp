@@ -14,9 +14,6 @@
 namespace aerial::input {
 namespace {
 
-// Only the ambiguous modifier aliases are dropped: VK_SHIFT/CONTROL/MENU fire
-// alongside their left/right counterparts, so keeping both would double every
-// event. The sided keys stay bindable - Right Shift is a common menu bind.
 bool ignoredKey(int key) {
     switch (key) {
     case 0:
@@ -34,49 +31,25 @@ bool ignoredKey(int key) {
     }
 }
 
-// ── The wheel ────────────────────────────────────────────────────────────────
-//
-// There is no "is the wheel down" state to poll - a detent is an event, not a
-// state - so it is fed in from the MouseDevice::feed hook and drained by poll().
-// Notches, not raw units: that is the form the game hands it over in.
-//
-// This used to be read off the message queue, on the assumption that the wheel
-// arrives as WM_MOUSEWHEEL or WM_POINTERWHEEL or inside WM_INPUT. In this
-// process it arrives as none of them, and the menu simply never scrolled.
 std::atomic<int> g_wheelNotches{0};
 
-// ── Taking the game's input away ─────────────────────────────────────────────
-//
-// A second line of defence only. The game does not read its input from this
-// queue - that is settled, and it is why the real blocking lives on
-// InputHandler::_handleButtonEvent instead - but anything else in the process
-// that does read it has no business acting while the menu is up.
-//
-// Releases are deliberately let through. A key held when the menu opened has
-// already been seen going down, and dropping its WM_KEYUP would leave whoever
-// saw it convinced it is still held.
 std::atomic<bool> g_swallowInput{false};
 
-HHOOK g_wheelHook = nullptr;   // the game window's thread, for reporting
+HHOOK g_wheelHook = nullptr;
 DWORD g_hookedThread = 0;
 std::unordered_map<DWORD, HHOOK> g_threadHooks;
 ULONGLONG g_lastScan = 0;
 
-// Diagnostics: how much of the queue the hook sees, and how many notches the
-// game has handed us.
 std::atomic<uint64_t> g_hookCalls{0};
 std::atomic<uint64_t> g_wheelEvents{0};
 std::atomic<uint32_t> g_lastPointerMessage{0};
 
-// The pointer family is only declared by the SDK at WINVER 6.2 and above, and
-// this translation unit does not need to raise its target to name three values.
 constexpr UINT kPointerFirst = 0x0240;
 constexpr UINT kPointerLast = 0x0250;
-constexpr UINT kPointerUp = 0x0247;             // WM_POINTERUP
-constexpr UINT kPointerLeave = 0x024A;          // WM_POINTERLEAVE
-constexpr UINT kPointerCaptureChanged = 0x024C; // WM_POINTERCAPTURECHANGED
+constexpr UINT kPointerUp = 0x0247;
+constexpr UINT kPointerLeave = 0x024A;
+constexpr UINT kPointerCaptureChanged = 0x024C;
 
-// Anything that could move the player, the camera, the hotbar or a game screen.
 bool inputMessage(UINT id) {
     if (id >= WM_KEYFIRST && id <= WM_KEYLAST)
         return true;
@@ -87,7 +60,6 @@ bool inputMessage(UINT id) {
     return id == WM_INPUT;
 }
 
-// The ones that only ever end an interaction, never start one.
 bool releaseMessage(UINT id) {
     switch (id) {
     case WM_KEYUP:
@@ -106,26 +78,20 @@ bool releaseMessage(UINT id) {
 }
 
 LRESULT CALLBACK messageProc(int code, WPARAM wParam, LPARAM lParam) {
-    // The hook is called for peeks as well as for removals; acting on both would
-    // count every detent twice or more.
+
     if (code == HC_ACTION && lParam && wParam == PM_REMOVE) {
         g_hookCalls.fetch_add(1, std::memory_order_relaxed);
 
         auto* message = reinterpret_cast<MSG*>(lParam);
         const UINT id = message->message;
 
-        // Remember anything pointer-shaped, so a wheel arriving by a route not
-        // handled below still shows up in the log.
         if (id == WM_INPUT || (id >= WM_MOUSEFIRST && id <= WM_MOUSELAST) ||
             (id >= 0x0240 && id <= 0x0250))
             g_lastPointerMessage.store(id, std::memory_order_relaxed);
 
         if (g_swallowInput.load(std::memory_order_relaxed) && inputMessage(id) &&
             !releaseMessage(id)) {
-            // Raw input holds a buffer per message that the system only frees
-            // once the message reaches DefWindowProc. Nulling WM_INPUT without
-            // this leaks a little for every mouse report - thousands a second -
-            // for as long as the menu stays open.
+
             if (id == WM_INPUT)
                 DefWindowProcW(message->hwnd, WM_INPUT, message->wParam, message->lParam);
 
@@ -137,19 +103,14 @@ LRESULT CALLBACK messageProc(int code, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
 
-} // namespace
+}
 
 void InputManager::installMessageHook() {
-    // Which thread pumps the wheel is not knowable from outside: a DirectX UWP
-    // app can run its input on a core-independent thread that has nothing to do
-    // with the one owning the CoreWindow. So every thread in the process gets a
-    // hook. On a thread without a message queue that costs nothing, and it
-    // removes the guesswork entirely.
+
     const DWORD windowThread = platform::gameWindowThread();
     if (!windowThread)
         return;
 
-    // Threads come and go, so this re-scans - but not every sample.
     const ULONGLONG now = GetTickCount64();
     if (g_wheelHook && now - g_lastScan < 3000)
         return;
@@ -171,8 +132,6 @@ void InputManager::installMessageHook() {
             if (g_threadHooks.find(entry.th32ThreadID) != g_threadHooks.end())
                 continue;
 
-            // hMod is null on purpose: the hook lives in this process, so
-            // Windows wants it that way and there is no module to keep loaded.
             const HHOOK hook = SetWindowsHookExW(WH_GETMESSAGE, messageProc, nullptr,
                                                  entry.th32ThreadID);
             if (!hook)
@@ -207,8 +166,6 @@ void InputManager::removeMessageHook() {
     g_hookedThread = 0;
     g_lastScan = 0;
 
-    // Nothing is filtering the queue any more, so the flag must not survive to
-    // describe a state that no longer exists.
     g_swallowInput.store(false, std::memory_order_relaxed);
 }
 
@@ -247,12 +204,8 @@ InputManager::Stats InputManager::stats() const {
 void InputManager::sample() {
     m_samples.fetch_add(1, std::memory_order_relaxed);
 
-    // Without this the synchronous key APIs below have no input queue to read
-    // from and report nothing at all.
     platform::attachToGameInput();
 
-    // The game window does not exist for the first frames after injection, so
-    // this keeps trying until it does. It returns immediately once attached.
     installMessageHook();
 
     const bool focused = platform::gameFocused();
@@ -272,12 +225,9 @@ void InputManager::sample() {
             asyncDowns += asyncDown;
             syncDowns += syncDown;
 
-            // Either source counts: whichever one this platform actually feeds
-            // is the one that wins, and the watchdog reports which that is.
             state[static_cast<size_t>(key)] = asyncDown || syncDown;
         }
     }
-    // Unfocused: leave everything false so keys cannot stick down.
 
     m_asyncDowns.store(asyncDowns, std::memory_order_relaxed);
     m_syncDowns.store(syncDowns, std::memory_order_relaxed);
@@ -303,9 +253,6 @@ void InputManager::poll() {
 
     auto& bus = EventBus::get();
 
-    // Wheel first: notches accumulate between polls, and one event carrying the
-    // whole movement is both cheaper and smoother than replaying a detent at a
-    // time.
     if (const int notches = g_wheelNotches.exchange(0, std::memory_order_relaxed); notches != 0) {
         MouseEvent wheel;
         wheel.button = notches > 0 ? MouseEvent::Button::ScrollUp : MouseEvent::Button::ScrollDown;
@@ -344,7 +291,6 @@ void InputManager::poll() {
         event.down = down;
         bus.dispatch(event);
 
-        // Binds fire on press only, and never while a GUI has capture.
         if (down && !event.isCancelled() && !m_captured)
             ModuleManager::get().handleKey(key, true);
     }
@@ -370,8 +316,6 @@ char InputManager::characterFor(int virtualKey) {
 
     const UINT scan = MapVirtualKeyW(static_cast<UINT>(virtualKey), MAPVK_VK_TO_VSC);
 
-    // First ask the active layout, so punctuation lands where the key actually
-    // prints it.
     wchar_t buffer[8]{};
     if (ToUnicode(static_cast<UINT>(virtualKey), scan, state, buffer, 8, 0) == 1) {
         const wchar_t value = buffer[0];
@@ -379,10 +323,6 @@ char InputManager::characterFor(int virtualKey) {
             return static_cast<char>(value);
     }
 
-    // Otherwise fall back to the key's own label. On a non-Latin layout the
-    // call above returns Cyrillic, which cannot go into a file name and used to
-    // be dropped - so letters simply did not type while digits did. The key is
-    // still plainly "A" on the keyboard, and that is what a config name wants.
     const bool shift = (state[VK_SHIFT] & 0x80) != 0;
     const bool capsLock = (state[VK_CAPITAL] & 0x01) != 0;
 
@@ -444,7 +384,6 @@ const char* InputManager::keyName(int virtualKey) {
         return buffer;
     }
 
-    // Fall back to the layout-dependent name Windows reports.
     const UINT scan = MapVirtualKeyW(static_cast<UINT>(virtualKey), MAPVK_VK_TO_VSC);
     wchar_t wide[64]{};
     if (GetKeyNameTextW(static_cast<LONG>(scan << 16), wide, 63) > 0) {
@@ -456,4 +395,4 @@ const char* InputManager::keyName(int virtualKey) {
     return buffer;
 }
 
-} // namespace aerial::input
+}

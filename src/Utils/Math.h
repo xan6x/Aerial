@@ -28,7 +28,6 @@ struct Vec2 {
     float length() const { return std::sqrt(x * x + y * y); }
     Vec2 normalised() const { const float l = length(); return l > 0.0f ? *this / l : Vec2{}; }
 
-    // Wraps both components into (-180, 180]; used for view-angle deltas.
     Vec2 normaliseAngles() const {
         Vec2 result = *this;
         while (result.x > 180.0f) result.x -= 360.0f;
@@ -39,7 +38,6 @@ struct Vec2 {
     }
 };
 
-// Matches the game's Vec3 (three consecutive floats, x/y/z).
 struct Vec3 {
     float x = 0.0f;
     float y = 0.0f;
@@ -64,7 +62,6 @@ struct Vec3 {
 
     Vec3 normalised() const { const float l = length(); return l > 0.0f ? *this / l : Vec3{}; }
 
-    // Pitch/yaw (degrees, MC convention) that look from this point at `target`.
     Vec2 anglesTo(const Vec3& target) const {
         const Vec3 delta = target - *this;
         const float horizontal = std::sqrt(delta.x * delta.x + delta.z * delta.z);
@@ -73,7 +70,6 @@ struct Vec3 {
         return Vec2{pitch, yaw}.normaliseAngles();
     }
 
-    // Unit direction for MC pitch/yaw in degrees.
     static Vec3 fromAngles(const Vec2& angles) {
         const float pitch = angles.x * kDeg2Rad;
         const float yaw = angles.y * kDeg2Rad;
@@ -82,7 +78,6 @@ struct Vec3 {
     }
 };
 
-// Axis-aligned bounding box, laid out like the game's AABB (min then max).
 struct AABB {
     Vec3 min;
     Vec3 max;
@@ -97,13 +92,11 @@ struct AABB {
         return p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y && p.z >= min.z && p.z <= max.z;
     }
 
-    // Nearest point on the box to `p` — the correct target for reach checks.
     Vec3 closestPoint(const Vec3& p) const {
         return {std::clamp(p.x, min.x, max.x), std::clamp(p.y, min.y, max.y), std::clamp(p.z, min.z, max.z)};
     }
 };
 
-// Integer block position (the game's BlockPos).
 struct BlockPos {
     int32_t x = 0;
     int32_t y = 0;
@@ -120,7 +113,6 @@ struct BlockPos {
     Vec3 centre() const { return {x + 0.5f, y + 0.5f, z + 0.5f}; }
 };
 
-// RGBA in 0..1, matching the mce::Color the game's UI renderer expects.
 struct Colour {
     float r = 1.0f;
     float g = 1.0f;
@@ -136,7 +128,6 @@ struct Colour {
                 static_cast<float>(hex & 0xFF) / 255.0f, alpha};
     }
 
-    // h in [0,360), s and v in [0,1].
     static Colour hsv(float h, float s, float v, float alpha = 1.0f) {
         h = std::fmod(h, 360.0f);
         if (h < 0.0f) h += 360.0f;
@@ -160,8 +151,6 @@ struct Colour {
     }
 };
 
-// Screen-space rectangle in the game's UI coordinate space (x0, y0, x1, y1),
-// which is the layout the RectangleArea struct uses.
 struct Rect {
     float left = 0.0f;
     float top = 0.0f;
@@ -193,4 +182,4 @@ struct Rect {
 template <typename T>
 constexpr T lerp(T from, T to, float t) { return static_cast<T>(from + (to - from) * t); }
 
-} // namespace aerial
+}

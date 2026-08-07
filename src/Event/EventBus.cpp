@@ -43,8 +43,6 @@ void EventBus::dispatchRaw(uint32_t type, Event& event) {
 
     ++m_dispatchDepth;
 
-    // Index-based iteration: the vector cannot be resized during dispatch
-    // because mutations are deferred, so this stays valid.
     const auto& list = it->second;
     for (size_t i = 0; i < list.size(); ++i) {
         const Entry& entry = list[i];
@@ -72,4 +70,4 @@ void EventBus::flushPending() {
         addEntry(type, std::move(entry));
 }
 
-} // namespace aerial
+}

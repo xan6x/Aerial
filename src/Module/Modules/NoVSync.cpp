@@ -8,9 +8,6 @@
 namespace aerial::modules {
 namespace {
 
-// The present path branches on a single byte. Resolve it through the pointer
-// the function reads, checking every link - this runs every frame and the
-// object does not exist before the renderer is up.
 uint8_t* vsyncFlag() {
     auto* holder = memory::at<uint8_t*>(offsets::data::presentConfig);
     if (!memory::isReadable(holder, sizeof(void*)))
@@ -23,13 +20,12 @@ uint8_t* vsyncFlag() {
     return config + offsets::field::presentConfig::vsync;
 }
 
-} // namespace
+}
 
 NoVSync::NoVSync()
     : Module("NoVSync", "Uncaps the frame rate by not waiting for the display refresh",
              Category::Client) {
-    // Enforced every frame: the game rewrites the flag from its own settings,
-    // so setting it once on enable would not hold.
+
     listen<Render2DEvent>(&NoVSync::onRender);
 }
 
@@ -45,8 +41,6 @@ void NoVSync::onRender(Render2DEvent& event) {
         return;
     }
 
-    // Remember what the game wanted the first time, so switching this off
-    // restores its setting instead of guessing.
     if (*flag != 0) {
         m_hadVsync = true;
         *flag = 0;
@@ -58,4 +52,4 @@ void NoVSync::onDisable() {
         *flag = 1;
 }
 
-} // namespace aerial::modules
+}

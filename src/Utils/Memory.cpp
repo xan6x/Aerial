@@ -30,7 +30,7 @@ const ModuleInfo& moduleInfo() {
 
 struct Pattern {
     std::vector<uint8_t> bytes;
-    std::vector<bool> mask; // true = must match
+    std::vector<bool> mask;
 };
 
 Pattern parsePattern(std::string_view text) {
@@ -62,7 +62,7 @@ Pattern parsePattern(std::string_view text) {
             ++digits;
         }
         if (digits == 0) {
-            ++i; // skip an unexpected character rather than spinning
+            ++i;
             continue;
         }
         pattern.bytes.push_back(value);
@@ -71,8 +71,6 @@ Pattern parsePattern(std::string_view text) {
     return pattern;
 }
 
-// Executable sections only — scanning .data would produce false positives and
-// costs several hundred megabytes of page walking on this binary.
 struct Section {
     uintptr_t start;
     size_t size;
@@ -104,7 +102,7 @@ const std::vector<Section>& executableSections() {
     return sections;
 }
 
-} // namespace
+}
 
 uintptr_t base() { return moduleInfo().base; }
 
@@ -204,4 +202,4 @@ bool nop(uintptr_t address, size_t size) {
     return patch(address, nops.data(), size);
 }
 
-} // namespace aerial::memory
+}

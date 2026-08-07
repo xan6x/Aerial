@@ -9,13 +9,6 @@
 
 namespace aerial {
 
-// A module setting: the unit the ClickGUI renders and the config file stores.
-// Concrete settings expose a plain `value` member, so module code reads them
-// with zero ceremony:
-//
-//     if (m_autoBlock->value) ...
-//     const float reach = m_range->value;
-//
 class Setting {
 public:
     enum class Type { Bool, Int, Float, Enum, Colour, Keybind, Text };
@@ -28,8 +21,6 @@ public:
     const std::string& name() const { return m_name; }
     const std::string& description() const { return m_description; }
 
-    // Hides the setting in the ClickGUI while the predicate is false. Chainable:
-    //     addFloat("Range", ...)->onlyIf([this] { return m_mode->is("Custom"); });
     Setting* onlyIf(std::function<bool()> predicate) {
         m_visible = std::move(predicate);
         return this;
@@ -141,7 +132,7 @@ public:
 
     void resetToDefault() override { value = defaultValue; }
 
-    int value;  // virtual-key code, 0 = unbound
+    int value;
     int defaultValue;
 };
 
@@ -157,4 +148,4 @@ public:
     std::string defaultValue;
 };
 
-} // namespace aerial
+}

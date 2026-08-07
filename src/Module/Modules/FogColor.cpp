@@ -14,8 +14,6 @@ struct Preset {
     Colour colour;
 };
 
-// Named starting points, because picking a colour out of three sliders from
-// scratch is tedious. "Custom" leaves the sliders alone.
 constexpr Preset kPresets[] = {
     {"Custom", Colour::rgb(0x6C8CFF)}, {"Purple", Colour::rgb(0x7B4BD8)},
     {"Blood", Colour::rgb(0x8C1B1B)},  {"Ocean", Colour::rgb(0x1B6B8C)},
@@ -23,7 +21,7 @@ constexpr Preset kPresets[] = {
     {"Toxic", Colour::rgb(0x4BD84B)},  {"White", Colour::rgb(0xE8ECF5)},
 };
 
-} // namespace
+}
 
 FogColor::FogColor() : Module("FogColor", "Recolours the world's fog", Category::Visuals) {
     std::vector<std::string> names;
@@ -45,7 +43,6 @@ FogColor::FogColor() : Module("FogColor", "Recolours the world's fog", Category:
     m_rainbowSpeed = addFloat("Speed", "Degrees of hue per second", 30.0f, 5.0f, 180.0f, 5.0f);
     m_rainbowSpeed->onlyIf([this] { return m_rainbow->value; });
 
-    // The preset only makes sense while it is driving the colour.
     m_preset->onlyIf([this] { return !m_rainbow->value; });
 
     listen<Render2DEvent>(&FogColor::onRender);
@@ -68,8 +65,8 @@ void FogColor::onRender(Render2DEvent& event) {
 }
 
 void FogColor::onDisable() {
-    // Hand the fog straight back; the next frame the game computes it as usual.
+
     hooks::setFogColour(false, 0.0f, 0.0f, 0.0f);
 }
 
-} // namespace aerial::modules
+}

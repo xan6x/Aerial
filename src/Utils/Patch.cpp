@@ -26,7 +26,6 @@ bool BytePatch::resolve() {
         return false;
     }
 
-    // Keep the bytes we are about to overwrite so the patch can be lifted.
     m_original.resize(m_replacement.size());
     std::memcpy(m_original.data(), reinterpret_cast<const void*>(m_address), m_original.size());
 
@@ -62,4 +61,4 @@ bool BytePatch::revert() {
     return ok;
 }
 
-} // namespace aerial
+}

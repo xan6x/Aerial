@@ -8,7 +8,6 @@ struct Render2DEvent;
 
 namespace aerial::modules {
 
-// Forces the game's gamma to its brightest, so caves and night are lit.
 class FullBright final : public Module {
 public:
     FullBright();
@@ -22,4 +21,4 @@ private:
     FloatSetting* m_gamma;
 };
 
-} // namespace aerial::modules
+}

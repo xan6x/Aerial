@@ -24,16 +24,12 @@ constexpr int kSampleRate = 44100;
 
 Notifications* g_instance = nullptr;
 
-// A short two-note chime, synthesised rather than shipped as an asset: a pure
-// sine is harsh, so each note gets a soft attack, an exponential decay and a
-// quiet octave above it for warmth. The two notes are a perfect fifth apart,
-// which is what makes it read as pleasant rather than as an alert.
 std::vector<uint8_t> buildChime(bool rising, float volume) {
     constexpr float kNoteSeconds = 0.075f;
     constexpr float kTotalSeconds = kNoteSeconds * 2.0f;
 
-    const float low = 880.0f;    // A5
-    const float high = 1318.5f;  // E6
+    const float low = 880.0f;
+    const float high = 1318.5f;
     const float first = rising ? low : high;
     const float second = rising ? high : low;
 
@@ -47,7 +43,6 @@ std::vector<uint8_t> buildChime(bool rising, float volume) {
         const float frequency = secondNote ? second : first;
         const float t = static_cast<float>(local) / kSampleRate;
 
-        // 4 ms attack keeps the onset from clicking; the decay tail fades it out.
         const float attack = std::min(1.0f, t / 0.004f);
         const float decay = std::exp(-t * 26.0f);
         const float envelope = attack * decay;
@@ -60,7 +55,6 @@ std::vector<uint8_t> buildChime(bool rising, float volume) {
             static_cast<int16_t>(std::clamp(value, -1.0f, 1.0f) * 32767.0f);
     }
 
-    // Minimal 16-bit mono PCM WAV around the samples, for PlaySound(SND_MEMORY).
     const uint32_t dataBytes = static_cast<uint32_t>(samples.size() * sizeof(int16_t));
     std::vector<uint8_t> wav(44 + dataBytes);
 
@@ -70,13 +64,13 @@ std::vector<uint8_t> buildChime(bool rising, float volume) {
     std::memcpy(&wav[0], "RIFF", 4);
     put32(4, 36 + dataBytes);
     std::memcpy(&wav[8], "WAVEfmt ", 8);
-    put32(16, 16);                                    // fmt chunk size
-    put16(20, 1);                                     // PCM
-    put16(22, 1);                                     // mono
+    put32(16, 16);
+    put16(20, 1);
+    put16(22, 1);
     put32(24, kSampleRate);
-    put32(28, kSampleRate * 2);                       // byte rate
-    put16(32, 2);                                     // block align
-    put16(34, 16);                                    // bits per sample
+    put32(28, kSampleRate * 2);
+    put16(32, 2);
+    put16(34, 16);
     std::memcpy(&wav[36], "data", 4);
     put32(40, dataBytes);
     std::memcpy(&wav[44], samples.data(), dataBytes);
@@ -84,7 +78,7 @@ std::vector<uint8_t> buildChime(bool rising, float volume) {
     return wav;
 }
 
-} // namespace
+}
 
 Notifications::Notifications()
     : Module("Notifications", "Toast popups with a soft chime", Category::Interface) {
@@ -128,7 +122,6 @@ void Notifications::onModuleToggle(ModuleToggleEvent& event) {
     if (!enabled() || !m_moduleToggles->value || !event.module)
         return;
 
-    // Do not announce ourselves, and do not announce the menu opening.
     if (event.module == this || !event.module->persistEnabled())
         return;
 
@@ -137,8 +130,7 @@ void Notifications::onModuleToggle(ModuleToggleEvent& event) {
 }
 
 void Notifications::playChime(bool rising) {
-    // Rebuild only when the volume changed; PlaySound keeps reading the buffer
-    // asynchronously, so it has to outlive the call.
+
     if (m_builtVolume != m_volume->value) {
         PlaySoundW(nullptr, nullptr, 0);
         m_chimeUp = buildChime(true, m_volume->value);
@@ -170,7 +162,6 @@ void Notifications::onRender(Render2DEvent& event) {
     const bool left = m_corner->is("Bottom left");
     const bool top = m_corner->is("Top right");
 
-    // Retire expired toasts once they have slid out.
     for (auto& toast : m_toasts) {
         if (!toast.expiring && now - toast.born > m_duration->value) {
             toast.expiring = true;
@@ -200,7 +191,6 @@ void Notifications::onRender(Render2DEvent& event) {
         const float width = DrawUtils::textWidth(toast.text, textSize, DrawUtils::Weight::Medium) +
                             34.0f * s;
 
-        // Slide in from the screen edge and fade with the same value.
         const float hidden = (1.0f - slide) * (width + margin);
         const float x = left ? margin - hidden : event.screenSize.x - margin - width + hidden;
         const float y = top ? margin + offset : event.screenSize.y - margin - height - offset;
@@ -213,7 +203,6 @@ void Notifications::onRender(Render2DEvent& event) {
         DrawUtils::fill(box, theme.panel.withAlpha(theme.panel.a * slide), radius);
         DrawUtils::outline(box, theme.outline.withAlpha(theme.outline.a * slide), 1.0f * s, radius);
 
-        // Accent dot instead of a bar: reads better on a rounded card.
         const float dot = 4.0f * s;
         const float cy = box.top + height * 0.5f;
         DrawUtils::fill({box.left + 12.0f * s - dot, cy - dot, box.left + 12.0f * s + dot, cy + dot},
@@ -222,7 +211,6 @@ void Notifications::onRender(Render2DEvent& event) {
         DrawUtils::text(toast.text, {box.left + 24.0f * s, cy - DrawUtils::textHeight(textSize) * 0.5f},
                         theme.textActive.withAlpha(slide), textSize, DrawUtils::Weight::Medium);
 
-        // Remaining lifetime along the bottom edge.
         const float life = std::clamp(1.0f - (now - toast.born) / m_duration->value, 0.0f, 1.0f);
         if (life > 0.0f)
             DrawUtils::fill({box.left + radius, box.bottom - 2.0f * s,
@@ -233,4 +221,4 @@ void Notifications::onRender(Render2DEvent& event) {
     }
 }
 
-} // namespace aerial::modules
+}

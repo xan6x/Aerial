@@ -9,4 +9,4 @@ public:
     NoDynamicFov();
 };
 
-} // namespace aerial::modules
+}
