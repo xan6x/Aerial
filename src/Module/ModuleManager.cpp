@@ -30,6 +30,7 @@ void ModuleManager::registerAll() {
     add<modules::Watermark>();
 
     add<modules::AutoSprint>();
+    add<modules::DiagonalSprint>();
     add<modules::ItemDelayFix>();
     add<modules::NoCamReset>();
     add<modules::SensMultiplier>();
