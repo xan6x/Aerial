@@ -13,6 +13,11 @@ inline constexpr uintptr_t MinecraftGame_releaseMouse   = 0x13D920;  // verified
 inline constexpr uintptr_t ClientInstance_grabMouse     = 0x11BE90;  // verified
 inline constexpr uintptr_t ClientInstance_currentScreenShouldStealMouse = 0x11C230;
 inline constexpr uintptr_t PlayerInventoryProxy_selectSlot = 0xA4EA30;
+inline constexpr uintptr_t ContainerScreenController_tick = 0x207BC0;
+inline constexpr uintptr_t ContainerScreenController_handleTakePlace = 0x207F10;
+inline constexpr uintptr_t ContainerScreenController_onSlotHovered = 0x20B920;
+inline constexpr uintptr_t ContainerScreenController_getCollectionIndex = 0x20B2E0;
+inline constexpr uintptr_t Json_Value_find = 0xC9E3D0;
 inline constexpr uintptr_t ClientInstance_leaveGame     = 0x119C80;
 inline constexpr uintptr_t ClientInstance_tickBuildAction = 0x11C350;  // per-tick attack/build action
 inline constexpr uintptr_t MinecraftGame_update         = 0x1312F0;
@@ -378,6 +383,12 @@ namespace localPlayer {
 inline constexpr ptrdiff_t clientInstance = 0x15F0;
 inline constexpr ptrdiff_t inventoryProxy = 0x1450;
 } // namespace localPlayer
+
+namespace containerScreenController {
+inline constexpr ptrdiff_t takePlaceButton   = 0x488;
+inline constexpr ptrdiff_t hoveredCollection = 0x500;
+inline constexpr ptrdiff_t hoveredSlot       = 0x524;
+} // namespace containerScreenController
 
 namespace playerInventoryProxy {
 inline constexpr ptrdiff_t selectedSlot = 0x10;

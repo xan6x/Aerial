@@ -32,6 +32,7 @@ void ModuleManager::registerAll() {
     add<modules::AutoSprint>();
     add<modules::DiagonalSprint>();
     add<modules::ItemDelayFix>();
+    add<modules::JavaHotkeys>();
     add<modules::NoCamReset>();
     add<modules::QuickSlots>();
     add<modules::SensMultiplier>();

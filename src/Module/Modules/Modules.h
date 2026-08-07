@@ -16,6 +16,7 @@
 #include "Module/Modules/AutoSprint.h"
 #include "Module/Modules/DiagonalSprint.h"
 #include "Module/Modules/ItemDelayFix.h"
+#include "Module/Modules/JavaHotkeys.h"
 #include "Module/Modules/NoCamReset.h"
 #include "Module/Modules/QuickSlots.h"
 #include "Module/Modules/SensMultiplier.h"

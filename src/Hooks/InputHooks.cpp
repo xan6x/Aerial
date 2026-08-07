@@ -1,6 +1,7 @@
 #include "Hooks/InputHooks.h"
 
 #include <cstdint>
+#include <string>
 
 #include "GUI/ClickGui.h"
 #include "Hooks/HookRegistry.h"
@@ -26,6 +27,14 @@ Detour<void(__fastcall*)(void*, char, char, short, short, short, short, char)> g
 Detour<void(__fastcall*)(void*)> g_tickBuildAction;
 Detour<void(__fastcall*)(void*)> g_grabMouse;
 Detour<void(__fastcall*)(void*)> g_releaseMouse;
+Detour<void(__fastcall*)(void*)> g_containerTick;
+Detour<void(__fastcall*)(void*, const std::string*, int)> g_slotHovered;
+Detour<int(__fastcall*)(void*, void*)> g_collectionIndex;
+
+std::string g_hoveredCollection;
+int g_hoveredSlot = -1;
+
+void* g_containerController = nullptr;
 
 void* g_moveInputHandler = nullptr;
 
@@ -99,6 +108,43 @@ void __fastcall onTickBuildAction(void* self) {
     g_tickBuildAction.call(self);
 }
 
+void __fastcall onContainerTick(void* self) {
+    g_containerController = self;
+    g_containerTick.call(self);
+}
+
+void __fastcall onSlotHovered(void* self, const std::string* collection, int slot) {
+    if (collection && memory::isReadable(collection, sizeof(std::string)) &&
+        collection->size() < 64) {
+        g_hoveredCollection = *collection;
+        g_hoveredSlot = slot;
+    }
+    g_slotHovered.call(self, collection, slot);
+}
+
+int __fastcall onCollectionIndex(void* self, void* bag) {
+    const int index = g_collectionIndex.call(self, bag);
+    if (index < 0 || !bag || !memory::isReadable(bag, 0x18))
+        return index;
+
+    using Find = void*(__fastcall*)(void*, const char*);
+    auto find = reinterpret_cast<Find>(memory::rva(func::Json_Value_find));
+
+    void* value = find(static_cast<uint8_t*>(bag) + 8, "#collection_name");
+    if (!value || !memory::isReadable(value, 9))
+        return index;
+    if (*(static_cast<const uint8_t*>(value) + 8) != 4)
+        return index;
+
+    const char* text = *reinterpret_cast<const char* const*>(value);
+    if (!text || !memory::isReadable(const_cast<char*>(text), 1))
+        return index;
+
+    g_hoveredCollection = text;
+    g_hoveredSlot = index;
+    return index;
+}
+
 void __fastcall onGrabMouse(void* self) {
     const bool focused = platform::gameFocused();
     LOG_DEBUG("Input", "grabMouse from {}, focused={}", t_ourCursorCall ? "the client" : "the game",
@@ -135,6 +181,13 @@ bool install() {
                        &onGrabMouse);
     g_releaseMouse.attach("MinecraftGame::releaseMouse",
                           memory::rva(func::MinecraftGame_releaseMouse), &onReleaseMouse);
+    g_containerTick.attach("ContainerScreenController::tick",
+                           memory::rva(func::ContainerScreenController_tick), &onContainerTick);
+    g_slotHovered.attach("ContainerScreenController::_onContainerSlotPressed",
+                         memory::rva(func::ContainerScreenController_onSlotHovered), &onSlotHovered);
+    g_collectionIndex.attach("ContainerScreenController::getCollectionIndex",
+                             memory::rva(func::ContainerScreenController_getCollectionIndex),
+                             &onCollectionIndex);
     return true;
 }
 
@@ -144,59 +197,36 @@ const Installer g_installer{"Input", &install};
 
 void clearMovementInput() { clearMovementState(g_moveInputHandler); }
 
+void* containerController() { return g_containerController; }
+
+int hoveredSlot(std::string& collection) {
+    collection = g_hoveredCollection;
+    return g_hoveredSlot;
+}
+
 void healMouseGrab() {
-    static float wrongSince = 0.0f;
-    constexpr float kGrabSeconds = 1.0f;
+    static float heldSince = 0.0f;
     constexpr float kReleaseSeconds = 0.35f;
 
-    auto& context = sdk::Context::get();
-    auto* client = context.client;
-    if (!client) {
-        wrongSince = 0.0f;
-        return;
-    }
-
-    const bool focused = platform::gameFocused();
-    const bool grabbed = client->mouseGrabbed();
-
-    bool wrong = false;
-    float patience = 0.0f;
-
-    if (!focused && grabbed) {
-        wrong = true;
-        patience = kReleaseSeconds;
-    } else if (focused && !grabbed && context.inGame() && !gui::ClickGui::get().isOpen()) {
-        using Steals = bool(__fastcall*)(void*);
-        auto steals = reinterpret_cast<Steals>(
-            memory::rva(func::ClientInstance_currentScreenShouldStealMouse));
-        wrong = !steals(client);
-        patience = kGrabSeconds;
-    }
-
-    if (!wrong) {
-        wrongSince = 0.0f;
+    auto* client = sdk::Context::get().client;
+    if (!client || platform::gameFocused() || !client->mouseGrabbed()) {
+        heldSince = 0.0f;
         return;
     }
 
     const float now = gui::clockSeconds();
-    if (wrongSince == 0.0f) {
-        wrongSince = now;
+    if (heldSince == 0.0f) {
+        heldSince = now;
         return;
     }
-    if (now - wrongSince < patience)
+    if (now - heldSince < kReleaseSeconds)
         return;
 
-    wrongSince = 0.0f;
+    heldSince = 0.0f;
 
     const OurCall ours;
-    if (grabbed) {
-        LOG_WARN("Input", "the cursor was still held while the game was in the background; "
-                          "letting it go");
-        client->releaseMouse();
-    } else {
-        LOG_WARN("Input", "the cursor was left released in a world with no screen up; taking it back");
-        client->grabMouse();
-    }
+    LOG_WARN("Input", "the cursor was still held while the game was in the background; letting it go");
+    client->releaseMouse();
 }
 
 void replayDeferredGrab() {
