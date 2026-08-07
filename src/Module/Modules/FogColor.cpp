@@ -1,13 +1,20 @@
 #include "Module/Modules/FogColor.h"
 
+#include <atomic>
 #include <cmath>
+#include <cstdint>
 
 #include "Event/Events.h"
 #include "GUI/Theme.h"
-#include "Hooks/Hooks.h"
+#include "Hooks/HookRegistry.h"
+#include "SDK/Offsets.h"
+#include "Utils/Hook.h"
+#include "Utils/Memory.h"
 
 namespace aerial::modules {
 namespace {
+
+namespace func = offsets::func;
 
 struct Preset {
     const char* name;
@@ -20,6 +27,39 @@ constexpr Preset kPresets[] = {
     {"Void", Colour::rgb(0x0A0A12)},   {"Sunset", Colour::rgb(0xE0733A)},
     {"Toxic", Colour::rgb(0x4BD84B)},  {"White", Colour::rgb(0xE8ECF5)},
 };
+
+Detour<uintptr_t(__fastcall*)(void*, void*, void*, void*)> g_setupFog;
+
+std::atomic<bool> g_enabled{false};
+std::atomic<float> g_red{1.0f};
+std::atomic<float> g_green{1.0f};
+std::atomic<float> g_blue{1.0f};
+
+uintptr_t __fastcall onSetupFog(void* self, void* a2, void* a3, void* a4) {
+    const uintptr_t result = g_setupFog.call(self, a2, a3, a4);
+
+    if (!g_enabled.load(std::memory_order_relaxed))
+        return result;
+
+    constexpr ptrdiff_t kOffset = offsets::field::levelRendererCamera::fogColour;
+    if (!memory::isReadable(self, kOffset + sizeof(float) * 4))
+        return result;
+
+    auto* colour = reinterpret_cast<float*>(static_cast<uint8_t*>(self) + kOffset);
+    colour[0] = g_red.load(std::memory_order_relaxed);
+    colour[1] = g_green.load(std::memory_order_relaxed);
+    colour[2] = g_blue.load(std::memory_order_relaxed);
+
+    return result;
+}
+
+bool install() {
+    g_setupFog.attach("LevelRendererCamera::setupFog",
+                      memory::rva(func::LevelRendererCamera_setupFog), &onSetupFog);
+    return true;
+}
+
+const hooks::Installer g_installer{"FogColor", &install};
 
 }
 
@@ -61,12 +101,15 @@ void FogColor::onRender(Render2DEvent& event) {
         colour = kPresets[static_cast<size_t>(m_preset->value)].colour;
     }
 
-    hooks::setFogColour(true, colour.r, colour.g, colour.b);
+    g_red.store(colour.r, std::memory_order_relaxed);
+    g_green.store(colour.g, std::memory_order_relaxed);
+    g_blue.store(colour.b, std::memory_order_relaxed);
+    g_enabled.store(true, std::memory_order_relaxed);
 }
 
 void FogColor::onDisable() {
 
-    hooks::setFogColour(false, 0.0f, 0.0f, 0.0f);
+    g_enabled.store(false, std::memory_order_relaxed);
 }
 
 }

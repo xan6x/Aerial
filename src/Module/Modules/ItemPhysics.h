@@ -26,6 +26,8 @@ private:
     BoolSetting* m_smooth;
     BoolSetting* m_preserve;
     BoolSetting* m_flat;
+
+    float m_lastSweep = 0.0f;
 };
 
 }

@@ -1,0 +1,106 @@
+#include "Hooks/InputHooks.h"
+
+#include <cstdint>
+
+#include "GUI/ClickGui.h"
+#include "Hooks/HookRegistry.h"
+#include "Input/InputManager.h"
+#include "SDK/Offsets.h"
+#include "Utils/Hook.h"
+#include "Utils/Memory.h"
+
+namespace aerial::hooks {
+namespace {
+
+namespace func = offsets::func;
+
+Detour<void(__fastcall*)(void*, void*)> g_moveInputTick;
+Detour<void(__fastcall*)(void*, void*)> g_processEvents;
+Detour<void(__fastcall*)(void*, void*, char, void*)> g_handleButtonEvent;
+Detour<void(__fastcall*)(void*, char, char, short, short, short, short, char)> g_mouseFeed;
+Detour<void(__fastcall*)(void*)> g_tickBuildAction;
+
+void* g_moveInputHandler = nullptr;
+
+void clearMovementState(void* handler) {
+    if (!handler || !memory::isReadable(handler, 0x80))
+        return;
+
+    namespace field = offsets::field::moveInput;
+    auto* bytes = static_cast<uint8_t*>(handler);
+
+    bytes[field::flagA] = 0;
+    *reinterpret_cast<uint16_t*>(bytes + field::direction) = 0;
+    bytes[field::flagB] = 0;
+    *reinterpret_cast<uint32_t*>(bytes + field::state) = 0;
+
+    *reinterpret_cast<float*>(bytes + field::amountX) = 0.0f;
+    *reinterpret_cast<float*>(bytes + field::amountY) = 0.0f;
+}
+
+void __fastcall onMoveInputTick(void* self, void* a2) {
+    g_moveInputHandler = self;
+
+    g_moveInputTick.call(self, a2);
+
+    if (gui::ClickGui::get().isOpen())
+        clearMovementState(self);
+}
+
+void __fastcall onProcessEvents(void* self, void* events) {
+    if (gui::ClickGui::get().isOpen())
+        return;
+    g_processEvents.call(self, events);
+}
+
+void __fastcall onHandleButtonEvent(void* self, void* event, char state, void* a4) {
+    // event[2] is 1 on press, 0 on release. Releases must pass through or a
+    // button held when the menu opened stays held for the game.
+    if (gui::ClickGui::get().isOpen() && memory::isReadable(event, 3) &&
+        static_cast<const uint8_t*>(event)[2] == 1)
+        return;
+
+    g_handleButtonEvent.call(self, event, state, a4);
+}
+
+constexpr char kWheelButton = 4;
+
+void __fastcall onMouseFeed(void* self, char button, char state, short x, short y, short dx,
+                            short dy, char a8) {
+    if (button == kWheelButton) {
+        input::InputManager::get().feedWheel(state);
+
+        if (gui::ClickGui::get().isOpen())
+            return;
+    }
+
+    g_mouseFeed.call(self, button, state, x, y, dx, dy, a8);
+}
+
+void __fastcall onTickBuildAction(void* self) {
+    if (gui::ClickGui::get().isOpen())
+        return;
+    g_tickBuildAction.call(self);
+}
+
+bool install() {
+    g_moveInputTick.attach("MoveInputHandler::tick", memory::rva(func::MoveInputHandler_tick),
+                           &onMoveInputTick);
+    g_processEvents.attach("ScreenView::_processEvents",
+                           memory::rva(func::ScreenView_processEvents), &onProcessEvents);
+    g_handleButtonEvent.attach("InputHandler::_handleButtonEvent",
+                               memory::rva(func::InputHandler_handleButtonEvent),
+                               &onHandleButtonEvent);
+    g_mouseFeed.attach("MouseDevice::feed", memory::rva(func::MouseDevice_feed), &onMouseFeed);
+    g_tickBuildAction.attach("ClientInstance::tickBuildAction",
+                             memory::rva(func::ClientInstance_tickBuildAction), &onTickBuildAction);
+    return true;
+}
+
+const Installer g_installer{"Input", &install};
+
+}
+
+void clearMovementInput() { clearMovementState(g_moveInputHandler); }
+
+}

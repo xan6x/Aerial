@@ -1,13 +1,42 @@
 #include "Module/Modules/JavaFov.h"
 
+#include <atomic>
 #include <cmath>
 
 #include "Event/Events.h"
-#include "Hooks/Hooks.h"
+#include "Hooks/HookRegistry.h"
 #include "SDK/Context.h"
 #include "SDK/Entity.h"
+#include "SDK/Offsets.h"
+#include "Utils/Hook.h"
+#include "Utils/Memory.h"
 
 namespace aerial::modules {
+namespace {
+
+namespace func = offsets::func;
+
+Detour<float(__fastcall*)(void*, float, bool)> g_getFov;
+
+std::atomic<bool> g_enabled{false};
+std::atomic<float> g_scale{1.0f};
+
+float __fastcall onGetFov(void* self, float partialTicks, bool a3) {
+    const float value = g_getFov.call(self, partialTicks, a3);
+    return g_enabled.load(std::memory_order_relaxed)
+               ? value * g_scale.load(std::memory_order_relaxed)
+               : value;
+}
+
+bool install() {
+    g_getFov.attach("LevelRendererPlayer::getFov", memory::rva(func::LevelRendererPlayer_getFov),
+                    &onGetFov);
+    return true;
+}
+
+const hooks::Installer g_installer{"JavaFov", &install};
+
+}
 
 JavaFov::JavaFov() : Module("JavaFov", "Java's sprint field-of-view easing", Category::Visuals) {
 
@@ -28,12 +57,13 @@ void JavaFov::onRender(Render2DEvent& event) {
     if (std::fabs(target - m_current) < 0.0005f)
         m_current = target;
 
-    hooks::setFovScale(true, m_current);
+    g_scale.store(m_current, std::memory_order_relaxed);
+    g_enabled.store(true, std::memory_order_relaxed);
 }
 
 void JavaFov::onDisable() {
     m_current = 1.0f;
-    hooks::setFovScale(false, 1.0f);
+    g_enabled.store(false, std::memory_order_relaxed);
 }
 
 }
