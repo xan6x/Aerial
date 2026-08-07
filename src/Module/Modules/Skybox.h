@@ -34,7 +34,11 @@ private:
                       {0x90, 0x90, 0x90, 0x90, 0x90, 0x90}};
 
     // What the last scan found, so the menu can say why nothing happened.
-    bool m_hasTexture = false;
+    // Ordered by preference, not by what is currently drawable: a pack that
+    // ships a cubemap wants the cubemap, and saying so is more use than quietly
+    // drawing its end_sky instead.
+    enum class Found { Nothing, Cubemap, EndSky };
+    Found m_found = Found::Nothing;
 };
 
 } // namespace aerial::modules

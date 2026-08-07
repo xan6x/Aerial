@@ -10,7 +10,7 @@ namespace aerial::modules {
 // Insert: far enough from anything the game binds that it cannot be pressed by
 // accident, and it is where this has always lived.
 ClickGuiModule::ClickGuiModule()
-    : Module("ClickGui", "Opens the settings interface", Category::Misc, VK_INSERT) {
+    : Module("ClickGui", "Opens the settings interface", Category::Client, VK_INSERT) {
     m_character = addEnum("Character", "Artwork behind the module list", {"None", "Rei", "Asuka"}, 1);
     m_characterOpacity = addFloat("Character opacity", "How strongly the artwork shows", 1.0f, 0.1f,
                                   1.0f, 0.05f);

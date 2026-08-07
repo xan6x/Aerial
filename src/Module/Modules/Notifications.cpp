@@ -87,7 +87,7 @@ std::vector<uint8_t> buildChime(bool rising, float volume) {
 } // namespace
 
 Notifications::Notifications()
-    : Module("Notifications", "Toast popups with a soft chime", Category::Render) {
+    : Module("Notifications", "Toast popups with a soft chime", Category::Interface) {
     m_sound = addBool("Sound", "Play a chime with each notification", true);
     m_volume = addFloat("Volume", "Chime loudness", 0.5f, 0.0f, 1.0f, 0.05f);
     m_volume->onlyIf([this] { return m_sound->value; });

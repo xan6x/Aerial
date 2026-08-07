@@ -6,7 +6,7 @@ namespace aerial::modules {
 
 Direct2D::Direct2D()
     : Module("Direct2D", "Draws the interface with Direct2D instead of the game's renderer",
-             Category::Misc) {
+             Category::Client) {
     setEnabled(true);
 }
 

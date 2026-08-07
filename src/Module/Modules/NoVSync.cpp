@@ -27,7 +27,7 @@ uint8_t* vsyncFlag() {
 
 NoVSync::NoVSync()
     : Module("NoVSync", "Uncaps the frame rate by not waiting for the display refresh",
-             Category::Render) {
+             Category::Client) {
     // Enforced every frame: the game rewrites the flag from its own settings,
     // so setting it once on enable would not hold.
     listen<Render2DEvent>(&NoVSync::onRender);

@@ -54,8 +54,8 @@ constexpr float kCloseSeconds = 0.15f;
 constexpr float kContentSlide = 22.0f;
 constexpr float kContentDelay = 0.18f;   // fraction of the transition
 
-const Category kCategories[] = {Category::Combat, Category::Movement, Category::Player,
-                                Category::World,  Category::Render,   Category::Misc};
+const Category kCategories[] = {Category::Visuals, Category::Interface, Category::Input,
+                                Category::Client};
 
 std::string formatValue(const Setting& setting) {
     if (setting.type() == Setting::Type::Float) {
@@ -88,12 +88,20 @@ Rect valuePill(const Rect& row, const std::string& value, float scale) {
             row.right - kPadding * scale, centreY + height * 0.5f};
 }
 
+// A slider is a 4px line, and 4px is not something anyone can be asked to hit.
+// The track is what gets drawn; the grab box is what answers the mouse, and it
+// is the full height of the row plus a knob's worth of overhang at each end so
+// the ends are reachable rather than just the middle.
 Rect sliderTrack(const Rect& row, float scale) {
-    const float width = 92.0f * scale;
+    const float width = 108.0f * scale;
     const float y = row.top + row.height() * 0.5f;
     const float height = 4.0f * scale;
     return {row.right - kPadding * scale - width, y - height * 0.5f, row.right - kPadding * scale,
             y + height * 0.5f};
+}
+
+Rect sliderGrab(const Rect& track, const Rect& row, float scale) {
+    return {track.left - 9.0f * scale, row.top, track.right + 9.0f * scale, row.bottom};
 }
 
 std::string lowered(std::string value) {
@@ -150,6 +158,20 @@ std::vector<Module*> ClickGui::visibleModules() const {
             found.push_back(module.get());
     }
     return found;
+}
+
+void ClickGui::dragSliderTo(float x) {
+    if (!m_draggingSlider)
+        return;
+
+    const float t = std::clamp((x - m_draggingSliderRect.left) /
+                                   std::max(1.0f, m_draggingSliderRect.width()),
+                               0.0f, 1.0f);
+
+    if (auto* asFloat = dynamic_cast<FloatSetting*>(m_draggingSlider))
+        asFloat->setFraction(t);
+    else if (auto* asInt = dynamic_cast<IntSetting*>(m_draggingSlider))
+        asInt->setFraction(t);
 }
 
 ClickGui::ScrollState& ClickGui::activeScroll() {
@@ -301,16 +323,23 @@ void ClickGui::render(Render2DEvent& event) {
                                 }),
                  m_hits.end());
 
-    if (m_draggingSlider && (GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
-        const float t = std::clamp((m_cursor.x - m_draggingSliderRect.left) /
-                                       std::max(1.0f, m_draggingSliderRect.width()),
-                                   0.0f, 1.0f);
-        if (auto* asFloat = dynamic_cast<FloatSetting*>(m_draggingSlider))
-            asFloat->setFraction(t);
-        else if (auto* asInt = dynamic_cast<IntSetting*>(m_draggingSlider))
-            asInt->setFraction(t);
-    } else {
-        m_draggingSlider = nullptr;
+    // A drag is followed here rather than from mouse events, because there is no
+    // move event to follow: the cursor is sampled, not messaged. The button
+    // state is what ends it, and only that - leaving the row, or the window, or
+    // the screen does not, which is what "grab and pull" has to mean.
+    //
+    // The held state comes from InputManager and not from GetAsyncKeyState. This
+    // runs on the game's render thread, and in this process that thread cannot
+    // read key state at all - the call returned "not held" on every frame, so a
+    // drag was dropped the moment after it started and a slider could only ever
+    // be tapped. InputManager samples on the client's own thread, which is the
+    // one that works here; it is also where the press that began the drag came
+    // from, so the two ends agree.
+    if (m_draggingSlider) {
+        if (input::InputManager::get().isDown(VK_LBUTTON))
+            dragSliderTo(m_cursor.x);
+        else
+            m_draggingSlider = nullptr;
     }
 
     renderTooltip(event.screenSize, layout.scale);
@@ -434,7 +463,7 @@ void ClickGui::renderSearch(const Rect& field, float scale, float amount) {
 
     // Pushed before the clear button: hits are tested last-first, so the smaller
     // control has to come second to win.
-    m_hits.push_back({field, HitKind::SearchField, nullptr, nullptr, Category::Misc, {}});
+    m_hits.push_back({field, HitKind::SearchField, nullptr, nullptr, Category::Client, {}});
 
     if (!empty) {
         const float side = 14.0f * scale;
@@ -450,7 +479,7 @@ void ClickGui::renderSearch(const Rect& field, float scale, float amount) {
                         (over ? theme.textActive : theme.textDim).withAlpha(amount), 11.0f * scale,
                         Weight::SemiBold, Align::Centre);
 
-        m_hits.push_back({clear, HitKind::SearchClear, nullptr, nullptr, Category::Misc, {}});
+        m_hits.push_back({clear, HitKind::SearchClear, nullptr, nullptr, Category::Client, {}});
 
         // Result count, so an empty result set is obviously empty rather than
         // looking like a category that happens to hold nothing.
@@ -582,7 +611,7 @@ void ClickGui::renderRail(const Layout& layout, float amount) {
                     (selected ? theme.textActive : theme.textDim).withAlpha(amount), 14.0f * scale,
                     selected ? Weight::SemiBold : Weight::Medium);
 
-    m_hits.push_back({item, HitKind::ConfigsTab, nullptr, nullptr, Category::Misc, {}});
+    m_hits.push_back({item, HitKind::ConfigsTab, nullptr, nullptr, Category::Client, {}});
 }
 
 void ClickGui::renderCards(const Layout& layout, float amount) {
@@ -826,6 +855,11 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
     DrawUtils::text(DrawUtils::fit(setting.name(), row.width() * 0.45f, 12.5f * scale), label,
                     theme.textDim, 12.5f * scale, Weight::Regular);
 
+    // Filled in by the slider cases and recorded with the hit, so a drag works
+    // against the geometry that was actually drawn.
+    Rect track;
+    Rect grab;
+
     switch (setting.type()) {
     case Setting::Type::Bool: {
         const auto& toggle = static_cast<BoolSetting&>(setting);
@@ -835,13 +869,13 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
 
         const float w = 26.0f * scale;
         const float h = 14.0f * scale;
-        const Rect track{row.right - kPadding * scale - w, row.top + row.height() * 0.5f - h * 0.5f,
-                         row.right - kPadding * scale, row.top + row.height() * 0.5f + h * 0.5f};
+        const Rect pill{row.right - kPadding * scale - w, row.top + row.height() * 0.5f - h * 0.5f,
+                        row.right - kPadding * scale, row.top + row.height() * 0.5f + h * 0.5f};
 
-        DrawUtils::fill(track, Colour::rgb(0x2A303C).lerp(theme.menuAccent(), on), h * 0.5f);
+        DrawUtils::fill(pill, Colour::rgb(0x2A303C).lerp(theme.menuAccent(), on), h * 0.5f);
         const float r = h * 0.5f - 2.0f * scale;
-        const float cx = track.left + r + 2.0f * scale + (track.width() - r * 2.0f - 4.0f * scale) * on;
-        const float cy = track.top + h * 0.5f;
+        const float cx = pill.left + r + 2.0f * scale + (pill.width() - r * 2.0f - 4.0f * scale) * on;
+        const float cy = pill.top + h * 0.5f;
         DrawUtils::fill({cx - r, cy - r, cx + r, cy + r}, Colour::rgb(0xFFFFFF, 0.95f), r);
         break;
     }
@@ -851,20 +885,41 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
                                    ? static_cast<FloatSetting&>(setting).fraction()
                                    : static_cast<IntSetting&>(setting).fraction();
 
-        const Rect track = sliderTrack(row, scale);
+        track = sliderTrack(row, scale);
+        grab = sliderGrab(track, row, scale);
+
+        const bool dragging = m_draggingSlider == &setting;
+        const bool overGrab = grab.contains(m_cursor);
+
         DrawUtils::fill(track, Colour::rgb(0x2A303C), track.height() * 0.5f);
 
         const float filled = track.left + track.width() * fraction;
         DrawUtils::fill({track.left, track.top, filled, track.bottom}, theme.accent,
                         track.height() * 0.5f);
 
-        const float knob = 5.5f * scale;
+        // The knob grows under the cursor and again while held, so it reads as
+        // something to take hold of rather than a dot to aim at.
+        Animated& lift = animation(&setting);
+        lift.set(dragging ? 1.0f : (overGrab ? 0.5f : 0.0f));
+        const float grown = lift.update(theme.animationSpeed);
+
+        const float knob = (6.0f + 2.2f * grown) * scale;
         const float cy = track.top + track.height() * 0.5f;
+
+        if (grown > 0.01f) {
+            DrawUtils::fill({filled - knob - 3.5f * scale, cy - knob - 3.5f * scale,
+                             filled + knob + 3.5f * scale, cy + knob + 3.5f * scale},
+                            theme.accent.withAlpha(0.20f * grown), knob + 3.5f * scale);
+        }
         DrawUtils::fill({filled - knob, cy - knob, filled + knob, cy + knob},
                         Colour::rgb(0xFFFFFF, 0.96f), knob);
 
-        DrawUtils::text(formatValue(setting), {track.left - 10.0f * scale, label.y}, theme.text,
-                        12.5f * scale, Weight::Medium, Align::Right);
+        DrawUtils::text(formatValue(setting), {track.left - 12.0f * scale, label.y},
+                        dragging ? theme.textActive : theme.text, 12.5f * scale, Weight::Medium,
+                        Align::Right);
+
+        if (hovered && !dragging)
+            m_tooltip = "drag to set";
         break;
     }
     case Setting::Type::Enum: {
@@ -916,7 +971,7 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
     }
     }
 
-    m_hits.push_back({row, HitKind::Setting, &module, &setting, m_category, {}});
+    m_hits.push_back({row, HitKind::Setting, &module, &setting, m_category, {}, track, grab});
     return row.height();
 }
 
@@ -988,8 +1043,8 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
 
     renderButton(createButton, "Create", scale, theme.menuAccent());
 
-    m_hits.push_back({field, HitKind::ConfigNameField, nullptr, nullptr, Category::Misc, {}});
-    m_hits.push_back({createButton, HitKind::ConfigCreate, nullptr, nullptr, Category::Misc, {}});
+    m_hits.push_back({field, HitKind::ConfigNameField, nullptr, nullptr, Category::Client, {}});
+    m_hits.push_back({createButton, HitKind::ConfigCreate, nullptr, nullptr, Category::Client, {}});
 
     y = newRow.bottom + kCardGap * scale * 1.6f;
 
@@ -1061,9 +1116,9 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
         if (renderButton(remove, "Delete", scale, Colour::rgb(0xFF6B60)))
             m_tooltip = "delete this config";
 
-        m_hits.push_back({loadFrom, HitKind::ConfigLoad, nullptr, nullptr, Category::Misc, name});
-        m_hits.push_back({saveTo, HitKind::ConfigSave, nullptr, nullptr, Category::Misc, name});
-        m_hits.push_back({remove, HitKind::ConfigDelete, nullptr, nullptr, Category::Misc, name});
+        m_hits.push_back({loadFrom, HitKind::ConfigLoad, nullptr, nullptr, Category::Client, name});
+        m_hits.push_back({saveTo, HitKind::ConfigSave, nullptr, nullptr, Category::Client, name});
+        m_hits.push_back({remove, HitKind::ConfigDelete, nullptr, nullptr, Category::Client, name});
 
         y = card.bottom + kCardGap * scale;
     }
@@ -1201,7 +1256,7 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
 
         case HitKind::Setting:
             if (it->setting && it->module)
-                applySettingClick(*it->setting, *it->module, it->area, cursor, right);
+                applySettingClick(*it, cursor, right);
             break;
 
         case HitKind::Module:
@@ -1267,9 +1322,9 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
         input::InputManager::get().setCapture(false);
 }
 
-void ClickGui::applySettingClick(Setting& setting, Module& module, const Rect& row, const Vec2& cursor,
-                                 bool right) {
-    const float scale = DrawUtils::uiScale();
+void ClickGui::applySettingClick(const Hit& hit, const Vec2& cursor, bool right) {
+    Setting& setting = *hit.setting;
+    Module& module = *hit.module;
 
     switch (setting.type()) {
     case Setting::Type::Bool:
@@ -1292,18 +1347,18 @@ void ClickGui::applySettingClick(Setting& setting, Module& module, const Rect& r
         break;
 
     case Setting::Type::Float:
-    case Setting::Type::Int: {
+    case Setting::Type::Int:
+        // Only the slider answers, not the whole row. The row is mostly the
+        // setting's name, and a click there used to snap the value to zero -
+        // which is how a stray click on the label could quietly turn something
+        // off.
+        if (!hit.grab.contains(cursor))
+            break;
+
         m_draggingSlider = &setting;
-        m_draggingSliderRect = sliderTrack(row, scale);
-        const float t = std::clamp((cursor.x - m_draggingSliderRect.left) /
-                                       std::max(1.0f, m_draggingSliderRect.width()),
-                                   0.0f, 1.0f);
-        if (auto* asFloat = dynamic_cast<FloatSetting*>(&setting))
-            asFloat->setFraction(t);
-        else if (auto* asInt = dynamic_cast<IntSetting*>(&setting))
-            asInt->setFraction(t);
+        m_draggingSliderRect = hit.track;
+        dragSliderTo(cursor.x);
         break;
-    }
 
     case Setting::Type::Colour:
     case Setting::Type::Text:

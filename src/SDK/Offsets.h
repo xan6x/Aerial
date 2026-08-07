@@ -170,6 +170,27 @@ inline constexpr uintptr_t InputHandler_tick            = 0x7147D0;
 // on the way down and 0 on the way up.
 inline constexpr uintptr_t InputHandler_handleButtonEvent = 0x715C40;
 
+// MouseDevice::feed(this, char button, char state, short x, short y,
+//                   short dx, short dy, char a8)
+//
+// Everything the mouse does enters the game here, before any mapping. Found by
+// following the global mouse-event vector at 0x1928AF0 back to what fills it.
+//
+//   button 0  a move, x/y absolute and dx/dy relative
+//   button 4  the wheel, with `state` carrying the notch count - signed, and
+//             already divided by WHEEL_DELTA by the caller
+//   anything else, a button, with `state` the up/down flag
+//
+// The wheel case is easy to confirm from the body: at 0x718FB6 it compares the
+// button against 4 and, on a match, calls itself with button 0 to replay the
+// last position. Only the wheel needs that.
+//
+// This is the only place the wheel can be read at all. It does not arrive as a
+// window message - not as WM_MOUSEWHEEL, not as WM_POINTERWHEEL, not inside
+// WM_INPUT - which is why the menu would not scroll however the message queue
+// was filtered.
+inline constexpr uintptr_t MouseDevice_feed = 0x718F40;
+
 inline constexpr uintptr_t MinecraftInputHandler_updateInputMode = 0x41F250;
 inline constexpr uintptr_t ClientInputCallbacks_handleBuildOrAttackButtonPress = 0x42A520;
 inline constexpr uintptr_t ClientInputCallbacks_handleInteractButtonPress      = 0x42A4C0;
@@ -252,6 +273,70 @@ inline constexpr uintptr_t LevelRendererCamera_renderSky = 0x5ACE40;
 inline constexpr uintptr_t LevelRendererCamera_renderSunOrMoon = 0x5AD330;
 inline constexpr uintptr_t LevelRendererCamera_renderStars     = 0x5AD1D0;
 
+// ── Drawing a cubemap ────────────────────────────────────────────────────────
+//
+// The End cube is one mce::Mesh drawn once with one texture, so it cannot show
+// six different faces however it is patched. A pack's overworld_cubemap has to
+// be drawn from scratch - and the game already contains a working six-face
+// cubemap to copy: the panorama behind the main menu.
+//
+// CubemapBackgroundScreen does it as, per face:
+//
+//   Tessellator::begin(tess, 1, 4)      ; a quad
+//   four vertices with UVs
+//   Tessellator::draw2(tess, material, texture)
+//
+// draw2 is the primitive that matters. It takes the material and the texture as
+// arguments, which is what makes six different faces possible without touching
+// the material system at all - the sky's own material can be reused as is.
+//
+// draw2 is the one that had to be found; begin, vertexUV and colour were
+// already here. Their arities are below, beside the declarations.
+//
+// MatrixStack::push(stack, &guard). The guard it fills is two pointers: the
+// stack itself, then the new top matrix. Popping is inline everywhere in the
+// game and this client does the same - see SkyCubemap.cpp.
+inline constexpr uintptr_t MatrixStack_push = 0x730000;
+inline constexpr uintptr_t Matrix_scale     = 0x15D560;   // (matrix, f x, y, z)
+
+// mce::TexturePtr::TexturePtr(this, TextureGroup*, const ResourceLocation*, int)
+//
+// The one way into the game's texture system, and it is driven by path rather
+// than by any fixed list - which is what makes overworld_cubemap reachable at
+// all, given the string appears nowhere in this build.
+inline constexpr uintptr_t TexturePtr_ctor = 0x73F2B0;
+
+// sizeof(mce::TexturePtr), confirmed twice over: the panorama indexes its array
+// of six with a stride of 0x58, and LevelRenderer's end_sky handle at +0x880 is
+// followed by the next member at +0x8D8.
+inline constexpr size_t kTexturePtrSize = 0x58;
+
+// Globals, not functions. The tessellator is the same singleton the menu
+// panorama and the controller-button renderer both use; the matrix stack is the
+// one renderSky pushes onto.
+inline constexpr uintptr_t g_tessellator = 0x1925550;
+inline constexpr uintptr_t g_skyMatrixStack = 0x192AED0;
+
+// What the End branch scales its cube by. Negative, which inverts model space
+// so the quads face inwards - the cube is looked at from inside.
+inline constexpr float kSkyCubeScale = -2000.0f;
+
+// The client's own cube has to fit inside that whole, and inside it by more
+// than a hair.
+//
+// A cube's corners are its half-size times root three away - so at 1900 they
+// reach 3290, well past the 2000 the End's own mesh is scaled to. Wherever the
+// game's mesh is nearer than that it wins the depth buffer, and the sky is a
+// hole there with the End's mesh behind it. That is the black triangle: the
+// projection of one corner of the cube poking through, which is why it sat in
+// the middle of the view whichever way the player turned and why it survived
+// every change of material and winding.
+//
+// 800 puts the corners at 1386, inside 2000 with room to spare whether the
+// game's mesh turns out to be a cube or a dome. Size is otherwise free: a cube
+// centred on the camera covers exactly the same directions at any scale.
+inline constexpr float kPackCubeScale = -800.0f;
+
 // LevelRendererCamera::setupFog computes the fog colour from the biome's RGBA
 // at [biome+0xD0], scales it by brightness and stores it to [this+0x3C8].
 // It reads rcx, rdx and r8; its one call site sets no stack arguments.
@@ -279,11 +364,19 @@ inline constexpr uintptr_t Font_drawShadow              = 0x1C55C0;
 inline constexpr uintptr_t Font_drawCached              = 0x1C8B60;  // verified via HUD call site
 inline constexpr uintptr_t Font_drawTransformed         = 0x1C53D0;
 inline constexpr uintptr_t Font_getLineLength           = 0x1C6530;  // verified
-inline constexpr uintptr_t Tessellator_begin            = 0x5D0660;
-inline constexpr uintptr_t Tessellator_vertex           = 0x5D0A90;
-inline constexpr uintptr_t Tessellator_vertexUV         = 0x5D0960;
-inline constexpr uintptr_t Tessellator_colour           = 0x5D0890;
+// Arities read at call sites rather than off prologues. vertexUV is the one
+// that catches people out: x, y and z ride in xmm1..xmm3, and u and v land in
+// the stack home slots at +0x20 and +0x28 like any fifth and sixth argument.
+inline constexpr uintptr_t Tessellator_begin            = 0x5D0660;  // (tess, char mode, int hint)
+inline constexpr uintptr_t Tessellator_vertex           = 0x5D0A90;  // (tess, f x, y, z)
+inline constexpr uintptr_t Tessellator_vertexUV         = 0x5D0960;  // (tess, f x, y, z, f u, v)
+inline constexpr uintptr_t Tessellator_colour           = 0x5D0890;  // (tess, u8 r, g, b, a)
 inline constexpr uintptr_t Tessellator_end              = 0x5D14F0;
+
+// Draws what has been tessellated with a given material and texture, which is
+// what makes a six-face cubemap possible without a mesh per face. Read off the
+// menu panorama, which indexes its six textures by a stride of 0x58.
+inline constexpr uintptr_t Tessellator_draw2            = 0x5D19E0;  // (tess, material*, tex*)
 
 // Chat / HUD
 inline constexpr uintptr_t GuiData_displayClientMessage = 0x1CDD30;
@@ -510,7 +603,27 @@ namespace levelRendererCamera {
 // Fog colour as four floats. setupFog writes it with a single movups, and both
 // of its branches target the same field.
 inline constexpr ptrdiff_t fogColour = 0x3C8;
+
+// Materials, one per thing the sky draws. The End branch passes +0x338 to
+// mce::Mesh::render as its second argument, and renderSunOrMoon picks between
+// +0x308 and +0x368 on a flag - so these are materials, not meshes.
+inline constexpr ptrdiff_t sunMaterial  = 0x308;
+inline constexpr ptrdiff_t skyMaterial  = 0x338;
+inline constexpr ptrdiff_t moonMaterial = 0x368;
+
+// The LevelRenderer, which owns the sky mesh at +0x220 and the end_sky texture
+// handle at +0x880.
+inline constexpr ptrdiff_t levelRenderer = 0x690;
 } // namespace levelRendererCamera
+
+namespace clientInstance {
+// [[ClientInstance + 0x30] + 0x80] is the mce::TextureGroup. Read off
+// MobEffectsOverlay's constructor, which is short enough to leave no doubt, and
+// confirmed independently by CubemapBackgroundScreen reaching the same group as
+// [[screen + 0x28] + 0x80].
+inline constexpr ptrdiff_t textureContainer = 0x30;
+inline constexpr ptrdiff_t textureGroup     = 0x80;
+} // namespace clientInstance
 
 namespace screen {
 // Screen+0x30 is the ClientInstance every Screen::render implementation walks.

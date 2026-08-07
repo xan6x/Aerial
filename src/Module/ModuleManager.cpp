@@ -16,34 +16,30 @@ void ModuleManager::registerAll() {
     if (!m_modules.empty())
         return;
 
-    // Combat
-    add<modules::ItemDelayFix>();
+    // Visuals
+    add<modules::FogColor>();
+    add<modules::FullBright>();
+    add<modules::ItemPhysics>();
+    add<modules::JavaFov>();
+    add<modules::NoDynamicFov>();
+    add<modules::NoHurtCam>();
+    add<modules::Skybox>();
 
-    // Movement
+    // Interface
+    add<modules::ArrayList>();
+    add<modules::Notifications>();
+    add<modules::Watermark>();
+
+    // Input
     add<modules::AutoSprint>();
-    add<modules::InventoryMove>();
-
-    // Player
+    add<modules::ItemDelayFix>();
     add<modules::NoCamReset>();
     add<modules::SensMultiplier>();
 
-    // Render
-    add<modules::ArrayList>();
-    add<modules::FogColor>();
-    add<modules::FullBright>();
-    add<modules::JavaFov>();
-    add<modules::ItemPhysics>();
-    add<modules::NoDynamicFov>();
-    add<modules::NoHurtCam>();
-    add<modules::Notifications>();
-    add<modules::NoVSync>();
-    add<modules::Skybox>();
-    add<modules::Watermark>();
-
-    // Misc
+    // Client
     add<modules::ClickGuiModule>();
     add<modules::Direct2D>();
-    add<modules::PacketLogger>();
+    add<modules::NoVSync>();
 
     std::sort(m_modules.begin(), m_modules.end(),
               [](const auto& a, const auto& b) { return a->name() < b->name(); });

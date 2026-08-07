@@ -16,6 +16,7 @@
 #include "Input/InputManager.h"
 #include "Render/D2DOverlay.h"
 #include "Render/DrawUtils.h"
+#include "Render/SkyCubemap.h"
 #include "SDK/ClientInstance.h"
 #include "SDK/Context.h"
 #include "SDK/Level.h"
@@ -54,6 +55,7 @@ Detour<void(__fastcall*)(void*, void*)> g_processEvents;
 // (this, ButtonEvent*, char state, void* a4). Four arguments, read off the one
 // call site inside InputHandler::tick - the prologue alone stops at three.
 Detour<void(__fastcall*)(void*, void*, char, void*)> g_handleButtonEvent;
+Detour<void(__fastcall*)(void*, char, char, short, short, short, short, char)> g_mouseFeed;
 
 // Captured from its own hook so the movement state can also be cleared from the
 // player tick, which does not always run after MoveInputHandler::tick.
@@ -99,7 +101,6 @@ Detour<uintptr_t(__fastcall*)(void*, void*, void*, void*)> g_setupFog;
 
 std::atomic<uint32_t> g_scaledOptionId{0};
 std::atomic<float> g_optionMultiplier{1.0f};
-std::atomic<bool> g_optionLogging{false};
 
 Detour<void(__fastcall*)(void*, float, float, float)> g_matrixTranslate;
 Detour<float(__fastcall*)(void*)> g_getGamma;
@@ -157,6 +158,7 @@ std::unordered_map<const void*, ItemSpin> g_itemSpins;
 void sweepItemSpins(float now);
 
 std::atomic<bool> g_skybox{false};
+std::atomic<bool> g_skyCubemap{false};
 
 std::atomic<bool> g_fogEnabled{false};
 std::atomic<float> g_fogRed{1.0f};
@@ -212,11 +214,67 @@ void dispatchOverlay() {
 // ── MinecraftGame::updateGraphics ────────────────────────────────────────────
 // Fallback draw point. With the Direct2D overlay attached the frame is drawn
 // from Present instead, which is later still and gives real antialiasing, so
-// this path only runs when Direct2D could not attach.
+// this path normally stays out of the way.
+//
+// "Attached" and "drawing" are not the same claim, though, and the difference is
+// what made the menu open invisibly on someone else's machine: the client took
+// the keyboard and the mouse, the module toggled, and nothing appeared. The
+// overlay reports itself ready as soon as it has a device and a target, but
+// everything after that - the keyed mutex, the shared texture, the composite
+// onto the game's back buffer - can fail quietly on hardware we never see, and
+// there is no reason to expect Present to be intercepted at all under an
+// injector that maps the DLL differently.
+//
+// So the test is whether frames are actually coming out of it, not whether it
+// says it is there. If the overlay has not drawn for this many game updates the
+// game's own renderer takes back over. It is a worse-looking menu, and a menu.
+//
+// Taking over means telling the overlay to stand down, not merely drawing from
+// here instead. DrawUtils asks D2DOverlay::ready() which backend to use, so an
+// overlay that still called itself ready went on receiving every fill and every
+// glyph from this path too - into a context nothing was compositing. Frames
+// were dispatched, the statistics counted them, and the screen stayed empty.
+// That is exactly the failure this was written to catch, and it walked straight
+// past it.
+//
+// Generous on purpose. This game happens to run update, updateGraphics and
+// Present one to one, but nothing guarantees that: cap the framerate without
+// capping the update loop and Present falls behind by a fixed ratio. A tight
+// window would read that as a failure and leave both renderers drawing the same
+// menu on top of each other forever.
+constexpr uint64_t kOverlayStallUpdates = 120;
+
+// The value of g_gameUpdates at the last frame Direct2D drew. Only the Present
+// callback sets it - the fallback must not, or it would prove itself alive.
+std::atomic<uint64_t> g_lastD2DUpdate{0};
+
+bool direct2DDrawing() {
+    const uint64_t updates = g_gameUpdates.load(std::memory_order_relaxed);
+
+    if (!render::DrawUtils::usingD2D()) {
+        // Hold the marker at "now" while the overlay is not in use, so the
+        // countdown starts from the moment it becomes ready rather than from
+        // zero. Without this the first check after the overlay came up compared
+        // against an update count from before the client was even injected, and
+        // declared a stall roughly twenty milliseconds into a working session.
+        g_lastD2DUpdate.store(updates, std::memory_order_relaxed);
+        return false;
+    }
+
+    const uint64_t last = g_lastD2DUpdate.load(std::memory_order_relaxed);
+    if (updates <= last + kOverlayStallUpdates)
+        return true;
+
+    LOG_WARN("Hooks", "Direct2D has not drawn a frame in {} updates while reporting '{}'",
+             updates - last, render::D2DOverlay::get().status());
+    render::D2DOverlay::get().abandon("Present intercepted but no frames came out of it");
+    return false;
+}
+
 void __fastcall onUpdateGraphics(void* self, void* a2) {
     g_updateGraphics.call(self, a2);
 
-    if (!render::DrawUtils::usingD2D())
+    if (!direct2DDrawing())
         dispatchOverlay();
 }
 
@@ -402,6 +460,34 @@ void __fastcall onHandleButtonEvent(void* self, void* event, char state, void* a
     g_handleButtonEvent.call(self, event, state, a4);
 }
 
+// ── MouseDevice::feed ────────────────────────────────────────────────────────
+//
+// The wheel, at the only point in the process where it exists.
+//
+// It never reaches a window message: not WM_MOUSEWHEEL, not WM_POINTERWHEEL,
+// not folded into WM_INPUT. That is why the menu would not scroll no matter
+// what the message hook did, and why the game's own list kept scrolling behind
+// it - both sides were reading different things, and only one of them was real.
+//
+// Button 4 is the wheel and `state` is the notch count, already divided by
+// WHEEL_DELTA by whoever called this and signed the usual way round: positive
+// is away from the hand.
+constexpr char kWheelButton = 4;
+
+void __fastcall onMouseFeed(void* self, char button, char state, short x, short y, short dx,
+                            short dy, char a8) {
+    if (button == kWheelButton) {
+        input::InputManager::get().feedWheel(state);
+
+        // The menu owns the wheel while it is up, so the hotbar does not change
+        // under it and the screen behind does not scroll with the list.
+        if (gui::ClickGui::get().isOpen())
+            return;
+    }
+
+    g_mouseFeed.call(self, button, state, x, y, dx, dy, a8);
+}
+
 // ── ClientInstance::tickBuildAction ──────────────────────────────────────────
 // Drives the per-tick attack/build action from the held mouse buttons. Skipping
 // it while the menu is open stops clicks in the GUI from reaching the world -
@@ -416,39 +502,16 @@ void __fastcall onTickBuildAction(void* self) {
 // ── Options::getFloat ────────────────────────────────────────────────────────
 // Every float setting comes through here, keyed by a 32-bit option id, so the
 // multiplier is applied to exactly one id rather than to whatever happens to be
-// read. The logging path exists to find that id: it names each option once and
-// reports later changes, so moving a slider in the game's settings identifies
-// the option behind it.
+// read.
+//
+// This used to carry a logging path that named every id it saw and reported
+// later changes - the tool that identified the sensitivity option in the first
+// place by watching which id moved with the slider. Its only switch was a
+// setting on SensMultiplier, and with that gone nothing could turn it on again,
+// so it is not left sitting unreachable in the one hook the game calls most.
+// SensMultiplier.cpp records what it found.
 float __fastcall onGetFloatOption(void* options, uint32_t id) {
     const float value = g_getFloatOption.call(options, id);
-
-    if (g_optionLogging.load(std::memory_order_relaxed)) {
-        static std::mutex mutex;
-        static std::unordered_map<uint32_t, float> seen;
-
-        // A dragged slider produces hundreds of changes a second, and more than
-        // one options object reads the same id, so the two alternate. Cap the
-        // output: the point is to name an id, not to trace every read.
-        static int reported = 0;
-        constexpr int kMaxReports = 200;
-
-        std::lock_guard lock(mutex);
-        const auto it = seen.find(id);
-        if (it == seen.end()) {
-            if (seen.size() < 128) {
-                seen.emplace(id, value);
-                LOG_INFO("Options", "id {:#010x} = {:.4f}", id, value);
-            }
-        } else if (it->second != value) {
-            if (reported < kMaxReports) {
-                ++reported;
-                LOG_INFO("Options", "id {:#010x} changed {:.4f} -> {:.4f}", id, it->second, value);
-                if (reported == kMaxReports)
-                    LOG_INFO("Options", "further changes will not be reported");
-            }
-            it->second = value;
-        }
-    }
 
     const uint32_t scaled = g_scaledOptionId.load(std::memory_order_relaxed);
     if (scaled != 0 && id == scaled)
@@ -775,6 +838,20 @@ void __fastcall onRenderSky(void* self, float a, float b) {
         return;
     }
 
+    const bool cubemap = g_skyCubemap.load(std::memory_order_relaxed);
+
+    // The End branch doubles this field and hands it to the shader as the tint
+    // its cube is drawn in, so it decides what the cube looks like.
+    //
+    // Half brightness when the pack's own end_sky is what gets drawn - that is
+    // the picture, and the biome fog colour would stain it.
+    //
+    // Zero when a cubemap is going over the top, which turns the cube black.
+    // The material carrying the cubemap adds its colour to what is already
+    // there rather than replacing it, so whatever the cube drew shows through
+    // the pack's sky and shifts every colour in it - worst where the pack's own
+    // image is darkest, which is where the End's starfield came through as a
+    // wedge. Adding to black is just the image.
     constexpr ptrdiff_t kOffset = offsets::field::levelRendererCamera::fogColour;
     float* colour = nullptr;
     float saved[4]{};
@@ -783,7 +860,7 @@ void __fastcall onRenderSky(void* self, float a, float b) {
         colour = reinterpret_cast<float*>(static_cast<uint8_t*>(self) + kOffset);
         for (int i = 0; i < 4; ++i) {
             saved[i] = colour[i];
-            colour[i] = 0.5f;
+            colour[i] = cubemap ? 0.0f : 0.5f;
         }
     }
 
@@ -801,6 +878,16 @@ void __fastcall onRenderSky(void* self, float a, float b) {
     sunOrMoon(self, b, true);
     sunOrMoon(self, b, false);
     stars(self, b, a);
+
+    // Last, over everything: a pack's own six-face cubemap, when it has one.
+    // Loading is attempted from here rather than from the module toggle because
+    // it needs a live ClientInstance to reach the texture group, and the menu
+    // can be opened before there is one.
+    if (cubemap) {
+        auto& sky = render::SkyCubemap::get();
+        if (sky.ready() || sky.load())
+            sky.draw(self);
+    }
 }
 
 // ── LevelRendererCamera::setupFog ────────────────────────────────────────────
@@ -893,10 +980,6 @@ void setOptionScale(uint32_t optionId, float multiplier) {
     g_optionMultiplier.store(multiplier, std::memory_order_relaxed);
 }
 
-void setOptionLogging(bool enabled) {
-    g_optionLogging.store(enabled, std::memory_order_relaxed);
-}
-
 void setGammaOverride(bool enabled, float gamma) {
     g_gamma.store(gamma, std::memory_order_relaxed);
     g_gammaEnabled.store(enabled, std::memory_order_relaxed);
@@ -926,6 +1009,12 @@ void setItemPhysics(bool enabled, float spin, float lift, float pivot, int thick
 }
 
 void setSkybox(bool enabled) { g_skybox.store(enabled, std::memory_order_relaxed); }
+
+void setSkyCubemap(bool enabled) {
+    g_skyCubemap.store(enabled, std::memory_order_relaxed);
+    if (!enabled)
+        render::SkyCubemap::get().unload();
+}
 
 void setFogColour(bool enabled, float red, float green, float blue) {
     g_fogRed.store(red, std::memory_order_relaxed);
@@ -971,6 +1060,7 @@ bool installAll() {
     g_handleButtonEvent.attach("InputHandler::_handleButtonEvent",
                                memory::rva(func::InputHandler_handleButtonEvent),
                                &onHandleButtonEvent);
+    g_mouseFeed.attach("MouseDevice::feed", memory::rva(func::MouseDevice_feed), &onMouseFeed);
     g_getFloatOption.attach("Options::getFloat", memory::rva(func::Options_getFloat),
                             &onGetFloatOption);
     g_renderSky.attach("LevelRendererCamera::renderSky",
@@ -991,7 +1081,13 @@ bool installAll() {
     // Preferred draw path. If DXGI cannot be reached the client keeps using the
     // game renderer through onUpdateGraphics.
     auto& overlay = render::D2DOverlay::get();
-    overlay.setFrameCallback([] { dispatchOverlay(); });
+    overlay.setFrameCallback([] {
+        // Proof of life for direct2DDrawing(). Set before the frame, not after,
+        // so a draw that faults still counts as Present having reached us.
+        g_lastD2DUpdate.store(g_gameUpdates.load(std::memory_order_relaxed),
+                              std::memory_order_relaxed);
+        dispatchOverlay();
+    });
     if (!overlay.install())
         LOG_WARN("Hooks", "Direct2D overlay unavailable: {}", overlay.status());
 

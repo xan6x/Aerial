@@ -23,9 +23,15 @@ namespace aerial::packs {
 //       gives a real skybox, and it needs nothing from us but the branch patch.
 //
 //   textures/environment/overworld_cubemap/cubemap_0..5
-//       Six separate face images. 1.1.5 has never heard of this path - the
-//       string does not appear in the binary - so the game will not load it
-//       whatever we do to the sky branch. Converting it is a job on its own.
+//       Six separate face images, and what a pack means by "the overworld sky".
+//       1.1.5 has never heard of this path - the string does not appear in the
+//       binary - so the game will not load it whatever we do to the sky branch.
+//
+// Precedence runs bottom-up: a pack with a cubemap wants the cubemap. Packs
+// routinely ship both, because end_sky is what the End wants and the cubemap is
+// what the overworld wants, and they are different pictures - Legacy Mash pairs
+// a 128-pixel starfield with six 2048-pixel space faces. Preferring end_sky
+// because it is the one we can draw puts the wrong sky overhead.
 struct SkyAssets {
     bool endSky = false;         // drawable as soon as the branch is patched
     bool cubemapShader = false;  // the pack also overrides the end_sky material

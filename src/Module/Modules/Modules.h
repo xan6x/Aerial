@@ -7,31 +7,27 @@
 //   2. include the header below,
 //   3. add<YourModule>() in ModuleManager::registerAll().
 
-// Combat
-#include "Module/Modules/ItemDelayFix.h"
+// Visuals
+#include "Module/Modules/FogColor.h"
+#include "Module/Modules/FullBright.h"
+#include "Module/Modules/ItemPhysics.h"
+#include "Module/Modules/JavaFov.h"
+#include "Module/Modules/NoDynamicFov.h"
+#include "Module/Modules/NoHurtCam.h"
+#include "Module/Modules/Skybox.h"
 
-// Movement
+// Interface
+#include "Module/Modules/ArrayList.h"
+#include "Module/Modules/Notifications.h"
+#include "Module/Modules/Watermark.h"
+
+// Input
 #include "Module/Modules/AutoSprint.h"
-#include "Module/Modules/InventoryMove.h"
-
-// Player
+#include "Module/Modules/ItemDelayFix.h"
 #include "Module/Modules/NoCamReset.h"
 #include "Module/Modules/SensMultiplier.h"
 
-// Render
-#include "Module/Modules/ArrayList.h"
-#include "Module/Modules/FogColor.h"
-#include "Module/Modules/FullBright.h"
-#include "Module/Modules/JavaFov.h"
-#include "Module/Modules/ItemPhysics.h"
-#include "Module/Modules/NoDynamicFov.h"
-#include "Module/Modules/NoHurtCam.h"
-#include "Module/Modules/NoVSync.h"
-#include "Module/Modules/Notifications.h"
-#include "Module/Modules/Skybox.h"
-#include "Module/Modules/Watermark.h"
-
-// Misc
+// Client
 #include "Module/Modules/ClickGuiModule.h"
 #include "Module/Modules/Direct2D.h"
-#include "Module/Modules/PacketLogger.h"
+#include "Module/Modules/NoVSync.h"

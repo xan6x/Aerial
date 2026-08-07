@@ -37,7 +37,7 @@ const std::string& labelFor(const Module& module) { return module.name(); }
 
 } // namespace
 
-ArrayList::ArrayList() : Module("ArrayList", "Lists enabled modules", Category::Render) {
+ArrayList::ArrayList() : Module("ArrayList", "Lists enabled modules", Category::Interface) {
     m_sort = addEnum("Sort", "Row ordering", {"Length", "Alphabetical"}, 0);
     m_accent = addEnum("Accent", "Where the colour goes", {"Bar", "Text", "Both"}, 2);
     m_rainbow = addBool("Rainbow", "Cycle row colours", true);

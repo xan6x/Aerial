@@ -34,31 +34,27 @@ bool ignoredKey(int key) {
     }
 }
 
-// ── The message hook ─────────────────────────────────────────────────────────
+// ── The wheel ────────────────────────────────────────────────────────────────
 //
-// A WH_GETMESSAGE hook parked on every thread in the process, doing two jobs
-// that key state cannot do.
+// There is no "is the wheel down" state to poll - a detent is an event, not a
+// state - so it is fed in from the MouseDevice::feed hook and drained by poll().
+// Notches, not raw units: that is the form the game hands it over in.
 //
-// Reading the wheel: there is no "is the wheel down" state to poll, a detent is
-// a one-off message. WH_GETMESSAGE rather than WH_MOUSE because a CoreWindow
-// receives the wheel as WM_POINTERWHEEL, which the mouse hook never reports.
-//
-// Taking input away from the game: see below.
-//
-// The hook runs on the game's thread; the accumulator is the handoff to ours.
-std::atomic<int> g_wheelDelta{0};
+// This used to be read off the message queue, on the assumption that the wheel
+// arrives as WM_MOUSEWHEEL or WM_POINTERWHEEL or inside WM_INPUT. In this
+// process it arrives as none of them, and the menu simply never scrolled.
+std::atomic<int> g_wheelNotches{0};
 
 // ── Taking the game's input away ─────────────────────────────────────────────
 //
-// Cancelling an event only ever stopped *our* handlers from running. The game
-// reads the keyboard and the mouse from its own message queue, so a right-click
-// on a menu card still swung the player's arm behind it, Escape still opened
-// the pause screen and W still walked. The only place that can be stopped is
-// the queue itself, which is where this hook already sits for the wheel.
+// A second line of defence only. The game does not read its input from this
+// queue - that is settled, and it is why the real blocking lives on
+// InputHandler::_handleButtonEvent instead - but anything else in the process
+// that does read it has no business acting while the menu is up.
 //
 // Releases are deliberately let through. A key held when the menu opened has
-// already been seen going down, and dropping its WM_KEYUP would leave the game
-// convinced it is still held - walking forever after the menu closed.
+// already been seen going down, and dropping its WM_KEYUP would leave whoever
+// saw it convinced it is still held.
 std::atomic<bool> g_swallowInput{false};
 
 HHOOK g_wheelHook = nullptr;   // the game window's thread, for reporting
@@ -66,9 +62,10 @@ DWORD g_hookedThread = 0;
 std::unordered_map<DWORD, HHOOK> g_threadHooks;
 ULONGLONG g_lastScan = 0;
 
-// Diagnostics: which of the three possible wheel paths is actually feeding us.
+// Diagnostics: how much of the queue the hook sees, and how many notches the
+// game has handed us.
 std::atomic<uint64_t> g_hookCalls{0};
-std::atomic<uint64_t> g_wheelMessages{0};
+std::atomic<uint64_t> g_wheelEvents{0};
 std::atomic<uint32_t> g_lastPointerMessage{0};
 
 // The pointer family is only declared by the SDK at WINVER 6.2 and above, and
@@ -78,8 +75,6 @@ constexpr UINT kPointerLast = 0x0250;
 constexpr UINT kPointerUp = 0x0247;             // WM_POINTERUP
 constexpr UINT kPointerLeave = 0x024A;          // WM_POINTERLEAVE
 constexpr UINT kPointerCaptureChanged = 0x024C; // WM_POINTERCAPTURECHANGED
-constexpr UINT kPointerWheel = 0x024E;          // WM_POINTERWHEEL
-constexpr UINT kPointerHWheel = 0x024F;         // WM_POINTERHWHEEL
 
 // Anything that could move the player, the camera, the hotbar or a game screen.
 bool inputMessage(UINT id) {
@@ -110,31 +105,6 @@ bool releaseMessage(UINT id) {
     }
 }
 
-// Raw input carries the wheel in usButtonData rather than as a wheel message,
-// and that is the path a game using WM_INPUT for mouse look takes.
-bool rawInputWheel(LPARAM lParam, int& delta) {
-    UINT size = 0;
-    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, nullptr, &size,
-                        sizeof(RAWINPUTHEADER)) != 0)
-        return false;
-    if (size == 0 || size > sizeof(RAWINPUT))
-        return false;
-
-    RAWINPUT raw{};
-    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &size,
-                        sizeof(RAWINPUTHEADER)) != size)
-        return false;
-
-    if (raw.header.dwType != RIM_TYPEMOUSE)
-        return false;
-    if ((raw.data.mouse.usButtonFlags & RI_MOUSE_WHEEL) == 0)
-        return false;
-
-    // Signed: usButtonData is a short in disguise.
-    delta = static_cast<short>(raw.data.mouse.usButtonData);
-    return true;
-}
-
 LRESULT CALLBACK messageProc(int code, WPARAM wParam, LPARAM lParam) {
     // The hook is called for peeks as well as for removals; acting on both would
     // count every detent twice or more.
@@ -149,20 +119,6 @@ LRESULT CALLBACK messageProc(int code, WPARAM wParam, LPARAM lParam) {
         if (id == WM_INPUT || (id >= WM_MOUSEFIRST && id <= WM_MOUSELAST) ||
             (id >= 0x0240 && id <= 0x0250))
             g_lastPointerMessage.store(id, std::memory_order_relaxed);
-
-        // Read the wheel first, whatever happens to the message afterwards: the
-        // menu scrolls with it precisely while the game is not allowed to.
-        if (id == WM_MOUSEWHEEL || id == kPointerWheel || id == kPointerHWheel) {
-            g_wheelDelta.fetch_add(GET_WHEEL_DELTA_WPARAM(message->wParam),
-                                   std::memory_order_relaxed);
-            g_wheelMessages.fetch_add(1, std::memory_order_relaxed);
-        } else if (id == WM_INPUT) {
-            int delta = 0;
-            if (rawInputWheel(message->lParam, delta)) {
-                g_wheelDelta.fetch_add(delta, std::memory_order_relaxed);
-                g_wheelMessages.fetch_add(1, std::memory_order_relaxed);
-            }
-        }
 
         if (g_swallowInput.load(std::memory_order_relaxed) && inputMessage(id) &&
             !releaseMessage(id)) {
@@ -262,6 +218,13 @@ void InputManager::setSwallowInput(bool swallow) {
     g_swallowInput.store(swallow, std::memory_order_relaxed);
 }
 
+void InputManager::feedWheel(int notches) {
+    if (notches == 0)
+        return;
+    g_wheelNotches.fetch_add(notches, std::memory_order_relaxed);
+    g_wheelEvents.fetch_add(1, std::memory_order_relaxed);
+}
+
 InputManager& InputManager::get() {
     static InputManager instance;
     return instance;
@@ -277,7 +240,7 @@ InputManager::Stats InputManager::stats() const {
             m_asyncDowns.load(std::memory_order_relaxed),
             m_syncDowns.load(std::memory_order_relaxed),
             g_hookCalls.load(std::memory_order_relaxed),
-            g_wheelMessages.load(std::memory_order_relaxed),
+            g_wheelEvents.load(std::memory_order_relaxed),
             g_lastPointerMessage.load(std::memory_order_relaxed)};
 }
 
@@ -340,15 +303,15 @@ void InputManager::poll() {
 
     auto& bus = EventBus::get();
 
-    // Wheel first: it is accumulated by the message hook between polls, and one
-    // event carrying the whole delta is both cheaper and smoother than replaying
-    // a detent at a time.
-    if (const int delta = g_wheelDelta.exchange(0, std::memory_order_relaxed); delta != 0) {
+    // Wheel first: notches accumulate between polls, and one event carrying the
+    // whole movement is both cheaper and smoother than replaying a detent at a
+    // time.
+    if (const int notches = g_wheelNotches.exchange(0, std::memory_order_relaxed); notches != 0) {
         MouseEvent wheel;
-        wheel.button = delta > 0 ? MouseEvent::Button::ScrollUp : MouseEvent::Button::ScrollDown;
+        wheel.button = notches > 0 ? MouseEvent::Button::ScrollUp : MouseEvent::Button::ScrollDown;
         wheel.down = true;
         wheel.position = m_cursor;
-        wheel.wheel = static_cast<float>(delta) / WHEEL_DELTA;
+        wheel.wheel = static_cast<float>(notches);
         bus.dispatch(wheel);
     }
 

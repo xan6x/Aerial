@@ -34,6 +34,11 @@ Detour<ResizeBuffersFn> g_resizeBuffers;
 
 std::atomic<uint64_t> g_presentCalls{0};
 
+// Consecutive frames the shared-texture lock could not be taken, and how many
+// in a row are worth a line in the log.
+std::atomic<uint64_t> g_acquireFailures{0};
+constexpr uint64_t kAcquireComplaint = 60;
+
 template <typename T>
 void release(T*& object) {
     if (object) {
@@ -648,12 +653,23 @@ void D2DOverlay::releaseTarget() {
 
 void D2DOverlay::onResize() { releaseTarget(); }
 
+void D2DOverlay::abandon(const char* why) {
+    if (m_abandoned.exchange(true, std::memory_order_relaxed))
+        return;
+
+    m_status = why;
+    LOG_WARN("D2D", "giving up on the overlay ({}); the game's renderer takes over. "
+                    "Toggle the Direct2D module off and on to try again.",
+             why);
+}
+
 void D2DOverlay::onPresent(IDXGISwapChain* swapChain) {
     if (g_presentCalls.fetch_add(1, std::memory_order_relaxed) == 0)
         LOG_INFO("D2D", "first present intercepted, swap chain {}", static_cast<void*>(swapChain));
 
-    // Switched off: leave the frame and the pipeline completely untouched.
-    if (!m_enabled)
+    // Switched off, or given up on: leave the frame and the pipeline completely
+    // untouched.
+    if (!m_enabled || m_abandoned.load(std::memory_order_relaxed))
         return;
 
     if (!m_ready) {
@@ -671,8 +687,19 @@ void D2DOverlay::onPresent(IDXGISwapChain* swapChain) {
         return;
 
     // Draw the overlay on our device, then hand the texture over.
-    if (FAILED(g_sharedMutex->AcquireSync(kMutexKey, 16)))
+    //
+    // The timeout is short so a frame is dropped rather than stalling the game's
+    // Present, but a lock that never comes free means the overlay silently draws
+    // nothing for the rest of the session - which is not a state anyone would
+    // work out from watching the screen, so it is worth saying out loud once.
+    if (const HRESULT acquired = g_sharedMutex->AcquireSync(kMutexKey, 16); FAILED(acquired)) {
+        if (g_acquireFailures.fetch_add(1, std::memory_order_relaxed) == kAcquireComplaint) {
+            LOG_WARN("D2D", "the overlay texture lock has failed {} frames running ({:#x})",
+                     kAcquireComplaint + 1, static_cast<uint32_t>(acquired));
+        }
         return;
+    }
+    g_acquireFailures.store(0, std::memory_order_relaxed);
 
     m_context->BeginDraw();
     m_context->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));

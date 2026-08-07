@@ -28,7 +28,7 @@ float framesPerSecond() {
 
 } // namespace
 
-Watermark::Watermark() : Module("Watermark", "Client logo in the corner", Category::Render) {
+Watermark::Watermark() : Module("Watermark", "Client logo in the corner", Category::Interface) {
     m_style = addEnum("Style", "Watermark appearance", {"Modern", "Simple"}, 0);
     m_showFps = addBool("FPS", "Append the frame rate", true);
     m_rainbow = addBool("Rainbow", "Cycle the accent colour", false);

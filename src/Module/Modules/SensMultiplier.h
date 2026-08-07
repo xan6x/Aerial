@@ -22,7 +22,6 @@ private:
     void onRender(Render2DEvent& event);
 
     FloatSetting* m_multiplier;
-    BoolSetting* m_findId;
 };
 
 } // namespace aerial::modules

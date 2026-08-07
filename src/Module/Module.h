@@ -9,13 +9,17 @@
 
 namespace aerial {
 
+// What a module is for, which is also how the menu is tabbed.
+//
+// Deliberately not the Combat / Movement / Player / World split every cheat
+// client uses: that scheme describes ways to gain an advantage, and sorting
+// this client's features into it made things like a fog tint and a watermark
+// look like they belonged to one.
 enum class Category {
-    Combat,
-    Movement,
-    Player,
-    World,
-    Render,
-    Misc,
+    Visuals,     // what the world looks like
+    Interface,   // what the client draws on top of it
+    Input,       // how the game responds to the mouse and keyboard
+    Client,      // the client's own machinery
 };
 
 const char* categoryName(Category category);
@@ -25,7 +29,7 @@ const char* categoryIcon(Category category);
 //
 //   class Sprint final : public Module {
 //   public:
-//       Sprint() : Module("Sprint", "Always sprint", Category::Movement) {
+//       Sprint() : Module("Sprint", "Always sprint", Category::Input) {
 //           m_multiplier = addFloat("Multiplier", "Speed multiplier", 1.0f, 1.0f, 2.0f);
 //           listen<TickEvent>(&Sprint::onTick);
 //       }

@@ -9,24 +9,20 @@ namespace aerial {
 
 const char* categoryName(Category category) {
     switch (category) {
-    case Category::Combat:   return "Combat";
-    case Category::Movement: return "Movement";
-    case Category::Player:   return "Player";
-    case Category::World:    return "World";
-    case Category::Render:   return "Render";
-    case Category::Misc:     return "Misc";
+    case Category::Visuals:   return "Visuals";
+    case Category::Interface: return "Interface";
+    case Category::Input:     return "Input";
+    case Category::Client:    return "Client";
     }
     return "Unknown";
 }
 
 const char* categoryIcon(Category category) {
     switch (category) {
-    case Category::Combat:   return "\xE2\x9A\x94";  // crossed swords
-    case Category::Movement: return "\xE2\x86\x92";  // arrow
-    case Category::Player:   return "\xE2\x98\xBB";  // person
-    case Category::World:    return "\xE2\x97\x89";  // globe
-    case Category::Render:   return "\xE2\x97\x88";  // diamond
-    case Category::Misc:     return "\xE2\x98\x85";  // star
+    case Category::Visuals:   return "\xE2\x97\x88";  // diamond
+    case Category::Interface: return "\xE2\x96\xA4";  // panel
+    case Category::Input:     return "\xE2\x86\x92";  // arrow
+    case Category::Client:    return "\xE2\x98\x85";  // star
     }
     return "?";
 }

@@ -9,7 +9,7 @@
 
 namespace aerial::modules {
 
-JavaFov::JavaFov() : Module("JavaFov", "Java's sprint field-of-view easing", Category::Render) {
+JavaFov::JavaFov() : Module("JavaFov", "Java's sprint field-of-view easing", Category::Visuals) {
     // Java arrives at roughly 1.15 while sprinting: its modifier is
     // (speed / walkSpeed + 1) / 2, and sprinting raises speed by 30%.
     m_sprintFov = addFloat("Sprint FOV", "Multiplier while sprinting", 1.15f, 1.0f, 1.5f, 0.01f);

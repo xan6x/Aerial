@@ -10,7 +10,7 @@ namespace aerial::modules {
 // its tail decoding as a memory write through rax, so the whole instruction
 // goes instead.
 NoCamReset::NoCamReset()
-    : PatchModule("NoCamReset", "Keeps your view when the server moves you", Category::Player,
+    : PatchModule("NoCamReset", "Keeps your view when the server moves you", Category::Input,
                   BytePatch::nops("FF 90 ? ? ? ? ? ? ? 48 8B D6 44 8B 4C 24", 6)) {}
 
 } // namespace aerial::modules

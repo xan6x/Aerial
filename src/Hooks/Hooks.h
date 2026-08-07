@@ -27,10 +27,6 @@ void* moveInputHandler();
 // is the state until the sensitivity id has been identified.
 void setOptionScale(uint32_t optionId, float multiplier);
 
-// Logs each distinct option id once, and every later change to one. Moving a
-// slider in the game's settings then names the id that slider writes.
-void setOptionLogging(bool enabled);
-
 // ── Brightness ───────────────────────────────────────────────────────────────
 // Replaces the gamma the game reads from its options.
 void setGammaOverride(bool enabled, float gamma);
@@ -63,6 +59,12 @@ void setItemPhysics(bool enabled, float spin, float lift, float pivot, int thick
 // fog colour and drops the sun, moon and stars, because the End branch returns
 // before drawing them; this puts both back.
 void setSkybox(bool enabled);
+
+// Draws a pack's textures/environment/overworld_cubemap over the sky, as six
+// separate faces. Independent of setSkybox: the cube the branch patch reveals
+// carries one texture on all six sides, so a pack that ships a real cubemap
+// needs its own geometry rather than a different picture on that cube.
+void setSkyCubemap(bool enabled);
 
 // ── Fog ──────────────────────────────────────────────────────────────────────
 // Replaces the fog colour the game computed for this frame. Only the RGB

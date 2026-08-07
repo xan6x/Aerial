@@ -50,6 +50,11 @@ public:
     // held item while scrolling the module list.
     void setSwallowInput(bool swallow);
 
+    // One wheel notch, signed, straight from MouseDevice::feed - the only place
+    // in this process where the wheel exists at all. Called on the game's
+    // thread; poll() drains what has piled up.
+    void feedWheel(int notches);
+
     static bool gameFocused();
     static const char* keyName(int virtualKey);
 
@@ -66,10 +71,10 @@ public:
         int asyncDowns = 0;   // keys GetAsyncKeyState reports held
         int syncDowns = 0;    // keys GetKeyboardState reports held
 
-        // Wheel plumbing: how much of the game's message queue the hook sees,
-        // and by which route the wheel arrives when it does.
+        // How much of the game's message queue the hook sees, and how many
+        // wheel notches the game has handed over.
         uint64_t hookCalls = 0;
-        uint64_t wheelMessages = 0;
+        uint64_t wheelEvents = 0;
         uint32_t lastPointerMessage = 0;
     };
     Stats stats() const;

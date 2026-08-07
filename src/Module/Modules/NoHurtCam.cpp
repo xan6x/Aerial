@@ -10,7 +10,7 @@ namespace aerial::modules {
 // zeroing the register instead would be tidier but changes what the shake is
 // computed from, so it is not a swap worth making untested.
 NoHurtCam::NoHurtCam()
-    : PatchModule("NoHurtCam", "Stops the camera shaking when you take damage", Category::Render,
+    : PatchModule("NoHurtCam", "Stops the camera shaking when you take damage", Category::Visuals,
                   BytePatch::nops("66 44 0F 6E 83 ? ? ? ? 45 0F 5B C0 44 0F 29 4C 24", 9)) {}
 
 } // namespace aerial::modules

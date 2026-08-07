@@ -83,14 +83,15 @@ private:
     void renderTooltip(const Vec2& screenSize, float scale);
 
     void handleClick(const Vec2& cursor, bool right);
-    void applySettingClick(Setting& setting, Module& module, const Rect& row, const Vec2& cursor,
-                           bool right);
+
+    // Moves the slider currently held to wherever the cursor is horizontally.
+    void dragSliderTo(float x);
 
     Animated& animation(const void* key, float initial = 0.0f);
 
     std::vector<Module*> visibleModules() const;
 
-    Category m_category = Category::Render;
+    Category m_category = Category::Visuals;
     std::unordered_map<const Module*, bool> m_expanded;
     std::unordered_map<const void*, Animated> m_animations;
     std::unordered_map<const void*, Animated> m_hoverAnimations;
@@ -117,10 +118,21 @@ private:
         HitKind kind = HitKind::Module;
         Module* module = nullptr;
         Setting* setting = nullptr;
-        Category category = Category::Render;
+        Category category = Category::Visuals;
         std::string config;
+
+        // Sliders only: the track exactly as it was drawn this frame, and the
+        // larger box that counts as grabbing it. Recomputing the track when the
+        // click arrives used the unfitted scale, so on a screen short enough to
+        // shrink the window the value did not land where the knob was.
+        Rect track;
+        Rect grab;
     };
     std::vector<Hit> m_hits;
+
+    // Declared here rather than beside handleClick because it takes a Hit, and
+    // the parameter's type has to be known by the time it is named.
+    void applySettingClick(const Hit& hit, const Vec2& cursor, bool right);
 
     // Which page the content area shows: the modules of a category, or the
     // config manager.

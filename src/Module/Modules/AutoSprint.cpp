@@ -11,7 +11,7 @@ namespace aerial::modules {
 // movzx and xor pair occupied. The xor is kept because the code after it reads
 // bpl as a zero.
 AutoSprint::AutoSprint()
-    : PatchModule("AutoSprint", "Always sprints", Category::Movement,
+    : PatchModule("AutoSprint", "Always sprints", Category::Input,
                   BytePatch("0F B6 41 ? 40 32 ED",
                             {0xB0, 0x01,                 // mov al, 1
                              0x90, 0x90,                 // padding

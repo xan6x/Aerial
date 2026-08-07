@@ -19,15 +19,12 @@ constexpr uint32_t kSensitivityOptionId = 1;
 
 SensMultiplier::SensMultiplier()
     : Module("SensMultiplier", "Scales look sensitivity beyond the game's own limit",
-             Category::Player) {
+             Category::Input) {
     m_multiplier = addFloat("Multiplier", "Sensitivity is multiplied by this", 1.0f, 0.1f, 3.0f,
                             0.05f);
-    // Kept for the next time an option has to be identified; off, because the
-    // one this module needs is known.
-    m_findId = addBool("Log options", "Log option ids and their changes", false);
 
-    // Pushed every frame because a setting has no change callback; both writes
-    // are a relaxed atomic store.
+    // Pushed every frame because a setting has no change callback; the write is
+    // a relaxed atomic store.
     listenAlways<Render2DEvent>(&SensMultiplier::onRender);
 }
 
@@ -40,15 +37,11 @@ std::string SensMultiplier::suffix() const {
 void SensMultiplier::onRender(Render2DEvent& event) {
     (void)event;
 
-    hooks::setOptionLogging(enabled() && m_findId->value);
     hooks::setOptionScale(enabled() ? kSensitivityOptionId : 0, m_multiplier->value);
 }
 
 void SensMultiplier::onEnable() {}
 
-void SensMultiplier::onDisable() {
-    hooks::setOptionScale(0, 1.0f);
-    hooks::setOptionLogging(false);
-}
+void SensMultiplier::onDisable() { hooks::setOptionScale(0, 1.0f); }
 
 } // namespace aerial::modules

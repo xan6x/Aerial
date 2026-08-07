@@ -25,7 +25,7 @@ constexpr Preset kPresets[] = {
 
 } // namespace
 
-FogColor::FogColor() : Module("FogColor", "Recolours the world's fog", Category::Render) {
+FogColor::FogColor() : Module("FogColor", "Recolours the world's fog", Category::Visuals) {
     std::vector<std::string> names;
     for (const Preset& preset : kPresets)
         names.emplace_back(preset.name);

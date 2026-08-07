@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 
 #include "Utils/Math.h"
@@ -37,16 +38,36 @@ public:
     // Called inside Present, with the render target bound and ready.
     void setFrameCallback(std::function<void()> callback);
 
-    // True once a device context and target bitmap exist and the overlay is
-    // switched on.
-    bool ready() const { return m_ready && m_enabled; }
+    // True once a device context and target bitmap exist, the overlay is
+    // switched on, and it has not been given up on.
+    //
+    // Everything drawn goes wherever this says, so it is not a status line - it
+    // is the routing decision. Getting that wrong is what made the menu vanish
+    // on someone else's machine: the client had already decided to fall back to
+    // the game's renderer, but this still answered true, so every fill and every
+    // glyph went on landing in a Direct2D context that nothing was compositing.
+    // Drawn, counted in the statistics, and invisible.
+    bool ready() const { return m_ready && m_enabled && !m_abandoned; }
 
     // Runtime switch between the Direct2D overlay and the game's renderer.
     // While off, Present is left completely alone - nothing is drawn and no
     // pipeline state is touched - which makes it a one-click test for whether
     // the overlay is behind a rendering problem.
-    void setEnabled(bool enabled) { m_enabled = enabled; }
+    //
+    // Switching it back on also clears a previous give-up, so the module toggle
+    // doubles as the manual retry.
+    void setEnabled(bool enabled) {
+        if (enabled)
+            m_abandoned = false;
+        m_enabled = enabled;
+    }
     bool enabled() const { return m_enabled; }
+
+    // Stop using the overlay for the rest of the session: it is present and
+    // reports itself healthy, but frames are not coming out of it. Safe to call
+    // from any thread, and only the first call is heard.
+    void abandon(const char* why);
+    bool abandoned() const { return m_abandoned; }
 
     // Back buffer size in pixels.
     Vec2 size() const { return m_size; }
@@ -84,6 +105,11 @@ private:
     bool m_enabled = true;
     bool m_installed = false;
     bool m_failed = false;
+
+    // Read on the render thread inside Present, written from whichever thread
+    // noticed the frames had stopped.
+    std::atomic<bool> m_abandoned{false};
+
     const char* m_status = "not installed";
 };
 

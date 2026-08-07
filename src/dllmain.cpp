@@ -3,6 +3,7 @@
 #include "Aerial.h"
 #include "Hooks/Hooks.h"
 #include "Input/InputManager.h"
+#include "Render/D2DOverlay.h"
 #include "Render/DrawUtils.h"
 #include "Utils/Logger.h"
 #include "Utils/Platform.h"
@@ -34,14 +35,15 @@ void logHeartbeat() {
     LOG_INFO("Watchdog",
              "updates +{} frames +{} ticks +{} overlays +{} | samples +{} polls +{} keys +{} last '{}' | "
              "down async={} sync={} | msgs +{} wheels +{} last pointer msg 0x{:04X} | "
-             "fills {}/{} texts {}/{} | focused={} | fg {} pid {} class '{}'",
+             "fills {}/{} texts {}/{} | backend {} ({}) | focused={} | fg {} pid {} class '{}'",
              updates - lastUpdates, frames - lastFrames, ticks - lastTicks, overlays - lastOverlays,
              input.samples - lastInput.samples, input.polls - lastInput.polls,
              input.transitions - lastInput.transitions,
              aerial::input::InputManager::keyName(input.lastKey), input.asyncDowns, input.syncDowns,
-             input.hookCalls - lastInput.hookCalls, input.wheelMessages - lastInput.wheelMessages,
+             input.hookCalls - lastInput.hookCalls, input.wheelEvents - lastInput.wheelEvents,
              input.lastPointerMessage,
              draw.fills, draw.fillsSkipped, draw.texts, draw.textsSkipped,
+             aerial::render::DrawUtils::backendName(), aerial::render::D2DOverlay::get().status(),
              aerial::platform::gameFocused(), static_cast<void*>(foreground.window),
              foreground.processId, foreground.className);
 
@@ -52,10 +54,25 @@ void logHeartbeat() {
     lastInput = input;
 }
 
+// The module handle for this DLL, or null when the loader has never heard of
+// it - which is what a manually mapping injector leaves behind. Derived from
+// our own code rather than from what DllMain was handed, because a mapper is
+// free to pass anything there.
+HMODULE loaderModule() {
+    HMODULE module = nullptr;
+    const bool found = GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                          reinterpret_cast<LPCWSTR>(&loaderModule), &module);
+    return found ? module : nullptr;
+}
+
 // Startup runs off the loader lock: DllMain must not hook, allocate consoles or
 // spawn work while it holds it.
 DWORD WINAPI startupThread(LPVOID) {
     aerial::Aerial::get().startup(g_module);
+
+    LOG_INFO("Aerial", "loaded from {} ({})", static_cast<void*>(loaderModule()),
+             loaderModule() ? "loader-mapped" : "manually mapped - eject will not unload the image");
 
     // Eject key: End. Polled here rather than through the input hooks so the
     // client can always be removed, even if a hook misbehaves.
@@ -81,7 +98,22 @@ DWORD WINAPI startupThread(LPVOID) {
     }
 
     aerial::Aerial::get().shutdown();
-    FreeLibraryAndExitThread(g_module, 0);
+
+    // FreeLibraryAndExitThread is only valid for a module the loader knows
+    // about. Injectors that map the image themselves never registered one, and
+    // handing the loader a base address it has no record of unloads nothing -
+    // it either fails or takes the process with it. Ask whether this code is in
+    // a module the loader owns, and only then unload.
+    //
+    // UNCHANGED_REFCOUNT, because the point is to ask a question, not to take a
+    // reference that then has to be given back.
+    HMODULE self = loaderModule();
+    if (self)
+        FreeLibraryAndExitThread(self, 0);
+
+    // Manually mapped: the detours are off and everything is torn down, which is
+    // as far as an eject can go from in here. The image stays where it is.
+    ExitThread(0);
 }
 
 } // namespace

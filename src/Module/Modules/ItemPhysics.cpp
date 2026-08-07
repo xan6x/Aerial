@@ -7,7 +7,7 @@ namespace aerial::modules {
 
 ItemPhysics::ItemPhysics()
     : Module("ItemPhysics", "Dropped items spin as they fall and settle when they land",
-             Category::Render) {
+             Category::Visuals) {
     m_spin = addFloat("Speed", "Degrees per second while falling", 240.0f, 0.0f, 720.0f, 10.0f);
 
     // A flat sprite lying on grass is nearly invisible - it has no silhouette
