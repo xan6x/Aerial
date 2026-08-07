@@ -20,6 +20,7 @@ void ModuleManager::registerAll() {
     add<modules::FullBright>();
     add<modules::ItemPhysics>();
     add<modules::JavaFov>();
+    add<modules::MotionBlur>();
     add<modules::NoDynamicFov>();
     add<modules::NoHurtCam>();
     add<modules::SelfNameTag>();

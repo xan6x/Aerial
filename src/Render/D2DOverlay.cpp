@@ -10,6 +10,7 @@
 #include <atomic>
 
 #include "Render/Images.h"
+#include "Render/MotionBlur.h"
 #include "Utils/Guard.h"
 #include "Utils/Hook.h"
 #include "Utils/Logger.h"
@@ -183,20 +184,23 @@ bool createStates() {
 
 struct D2DHooks {
     static HRESULT __stdcall present(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
+        guarded("motion blur", [&] { MotionBlur::get().onPresent(swapChain); });
         guarded("D2D present", [&] { D2DOverlay::get().onPresent(swapChain); });
         return g_present.call(swapChain, syncInterval, flags);
     }
 
     static HRESULT __stdcall present1(IDXGISwapChain1* swapChain, UINT syncInterval, UINT flags,
                                       const DXGI_PRESENT_PARAMETERS* parameters) {
-        guarded("D2D present1",
-                [&] { D2DOverlay::get().onPresent(reinterpret_cast<IDXGISwapChain*>(swapChain)); });
+        auto* chain = reinterpret_cast<IDXGISwapChain*>(swapChain);
+        guarded("motion blur", [&] { MotionBlur::get().onPresent(chain); });
+        guarded("D2D present1", [&] { D2DOverlay::get().onPresent(chain); });
         return g_present1.call(swapChain, syncInterval, flags, parameters);
     }
 
     static HRESULT __stdcall resizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount, UINT width,
                                            UINT height, DXGI_FORMAT format, UINT flags) {
 
+        MotionBlur::get().onResize();
         D2DOverlay::get().onResize();
         return g_resizeBuffers.call(swapChain, bufferCount, width, height, format, flags);
     }
