@@ -64,6 +64,8 @@ private:
     void renderCursor(float scale);
     void renderTooltip(const Vec2& screenSize, float scale);
 
+    void regrabMouse();
+
     void handleClick(const Vec2& cursor, bool right);
 
     void dragSliderTo(float x);

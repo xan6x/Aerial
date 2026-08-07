@@ -112,6 +112,8 @@ void __fastcall onGameUpdate(void* self) {
     if (!g_teardownDone.load(std::memory_order_relaxed)) {
         render::DrawUtils::beginFrame();
         guarded("input poll", [] { input::InputManager::get().poll(); });
+        guarded("deferred grab", [] { replayDeferredGrab(); });
+        guarded("cursor heal", [] { healMouseGrab(); });
     }
 
     g_gameUpdate.call(self);

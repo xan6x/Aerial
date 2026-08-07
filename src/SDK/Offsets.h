@@ -11,6 +11,7 @@ inline constexpr uintptr_t ClientInstance_onTick        = 0x11B2D0;
 
 inline constexpr uintptr_t MinecraftGame_releaseMouse   = 0x13D920;  // verified
 inline constexpr uintptr_t ClientInstance_grabMouse     = 0x11BE90;  // verified
+inline constexpr uintptr_t ClientInstance_currentScreenShouldStealMouse = 0x11C230;
 inline constexpr uintptr_t ClientInstance_leaveGame     = 0x119C80;
 inline constexpr uintptr_t ClientInstance_tickBuildAction = 0x11C350;  // per-tick attack/build action
 inline constexpr uintptr_t MinecraftGame_update         = 0x1312F0;

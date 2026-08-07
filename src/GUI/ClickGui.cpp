@@ -12,6 +12,7 @@
 #include "Module/Modules/Modules.h"
 #include "Render/DrawUtils.h"
 #include "SDK/Context.h"
+#include "Utils/Platform.h"
 #include "Utils/Logger.h"
 
 namespace aerial::gui {
@@ -150,8 +151,6 @@ ClickGui::ScrollState& ClickGui::activeScroll() {
 void ClickGui::open() {
     m_open = true;
 
-    input::InputManager::get().setSwallowInput(true);
-
     auto& context = sdk::Context::get();
     if (!context.inGame())
         LOG_INFO("ClickGui", "opened outside a world");
@@ -171,13 +170,23 @@ void ClickGui::close() {
     m_search.clear();
 
     input::InputManager::get().setCapture(false);
-    input::InputManager::get().setSwallowInput(false);
 
-    auto& context = sdk::Context::get();
-    if (m_releasedMouse && context.client) {
-        context.client->grabMouse();
-        m_releasedMouse = false;
-    }
+    regrabMouse();
+}
+
+void ClickGui::regrabMouse() {
+    if (!m_releasedMouse)
+        return;
+
+    auto* client = sdk::Context::get().client;
+    if (!client)
+        return;
+
+    if (!platform::gameFocused())
+        return;
+
+    client->grabMouse();
+    m_releasedMouse = false;
 }
 
 int ClickGui::activeCharacter() const {
@@ -221,12 +230,8 @@ void ClickGui::render(Render2DEvent& event) {
     const float step = frameDelta() / (m_open ? kOpenSeconds : kCloseSeconds);
     m_transition = std::clamp(m_transition + (m_open ? step : -step), 0.0f, 1.0f);
 
-    if (!m_open && m_releasedMouse) {
-        if (auto* client = sdk::Context::get().client) {
-            client->grabMouse();
-            m_releasedMouse = false;
-        }
-    }
+    if (!m_open)
+        regrabMouse();
 
     if (!m_open && m_transition <= 0.0f) {
 

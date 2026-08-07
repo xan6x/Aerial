@@ -33,8 +33,6 @@ bool ignoredKey(int key) {
 
 std::atomic<int> g_wheelNotches{0};
 
-std::atomic<bool> g_swallowInput{false};
-
 HHOOK g_wheelHook = nullptr;
 DWORD g_hookedThread = 0;
 std::unordered_map<DWORD, HHOOK> g_threadHooks;
@@ -44,61 +42,16 @@ std::atomic<uint64_t> g_hookCalls{0};
 std::atomic<uint64_t> g_wheelEvents{0};
 std::atomic<uint32_t> g_lastPointerMessage{0};
 
-constexpr UINT kPointerFirst = 0x0240;
-constexpr UINT kPointerLast = 0x0250;
-constexpr UINT kPointerUp = 0x0247;
-constexpr UINT kPointerLeave = 0x024A;
-constexpr UINT kPointerCaptureChanged = 0x024C;
-
-bool inputMessage(UINT id) {
-    if (id >= WM_KEYFIRST && id <= WM_KEYLAST)
-        return true;
-    if (id >= WM_MOUSEFIRST && id <= WM_MOUSELAST)
-        return true;
-    if (id >= kPointerFirst && id <= kPointerLast)
-        return true;
-    return id == WM_INPUT;
-}
-
-bool releaseMessage(UINT id) {
-    switch (id) {
-    case WM_KEYUP:
-    case WM_SYSKEYUP:
-    case WM_LBUTTONUP:
-    case WM_RBUTTONUP:
-    case WM_MBUTTONUP:
-    case WM_XBUTTONUP:
-    case kPointerUp:
-    case kPointerLeave:
-    case kPointerCaptureChanged:
-        return true;
-    default:
-        return false;
-    }
-}
-
 LRESULT CALLBACK messageProc(int code, WPARAM wParam, LPARAM lParam) {
-
     if (code == HC_ACTION && lParam && wParam == PM_REMOVE) {
         g_hookCalls.fetch_add(1, std::memory_order_relaxed);
 
-        auto* message = reinterpret_cast<MSG*>(lParam);
+        const auto* message = reinterpret_cast<const MSG*>(lParam);
         const UINT id = message->message;
 
         if (id == WM_INPUT || (id >= WM_MOUSEFIRST && id <= WM_MOUSELAST) ||
             (id >= 0x0240 && id <= 0x0250))
             g_lastPointerMessage.store(id, std::memory_order_relaxed);
-
-        if (g_swallowInput.load(std::memory_order_relaxed) && inputMessage(id) &&
-            !releaseMessage(id)) {
-
-            if (id == WM_INPUT)
-                DefWindowProcW(message->hwnd, WM_INPUT, message->wParam, message->lParam);
-
-            message->message = WM_NULL;
-            message->wParam = 0;
-            message->lParam = 0;
-        }
     }
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
@@ -165,15 +118,9 @@ void InputManager::removeMessageHook() {
     g_wheelHook = nullptr;
     g_hookedThread = 0;
     g_lastScan = 0;
-
-    g_swallowInput.store(false, std::memory_order_relaxed);
 }
 
 bool InputManager::messageHooked() const { return g_wheelHook != nullptr; }
-
-void InputManager::setSwallowInput(bool swallow) {
-    g_swallowInput.store(swallow, std::memory_order_relaxed);
-}
 
 void InputManager::feedWheel(int notches) {
     if (notches == 0)
@@ -204,11 +151,14 @@ InputManager::Stats InputManager::stats() const {
 void InputManager::sample() {
     m_samples.fetch_add(1, std::memory_order_relaxed);
 
-    platform::attachToGameInput();
-
     installMessageHook();
 
     const bool focused = platform::gameFocused();
+
+    if (focused)
+        platform::attachToGameInput();
+    else
+        platform::detachFromGameInput();
 
     KeyState state{};
     int asyncDowns = 0;

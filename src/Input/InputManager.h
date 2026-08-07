@@ -28,8 +28,6 @@ public:
     void removeMessageHook();
     bool messageHooked() const;
 
-    void setSwallowInput(bool swallow);
-
     void feedWheel(int notches);
 
     static bool gameFocused();
