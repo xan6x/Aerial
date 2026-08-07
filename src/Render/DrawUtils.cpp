@@ -34,6 +34,19 @@ float g_uiScale = 1.0f;
 // matching pop calls the right thing.
 std::vector<bool> g_clipStack;
 
+// The same clip, kept in plain rectangles. Direct2D enforces its own, but the
+// fallback backend has no scissor at all - without this, a scrolled list simply
+// draws straight through the window and out over the game.
+std::vector<Rect> g_softClip;
+
+Rect intersect(const Rect& a, const Rect& b) {
+    return {std::max(a.left, b.left), std::max(a.top, b.top), std::min(a.right, b.right),
+            std::min(a.bottom, b.bottom)};
+}
+
+// Current clip, or nullptr when nothing is pushed.
+const Rect* softClip() { return g_softClip.empty() ? nullptr : &g_softClip.back(); }
+
 // ── Game renderer backend ────────────────────────────────────────────────────
 
 using ScreenRendererSingletonFn = void*(__fastcall*)();
@@ -45,13 +58,22 @@ void legacyFill(const Rect& area, const Colour& colour) {
     static auto fill =
         reinterpret_cast<ScreenRendererFillFn>(memory::rva(offsets::func::ScreenRenderer_fill));
 
+    Rect visible = area;
+    if (const Rect* clip = softClip()) {
+        visible = intersect(area, *clip);
+        if (visible.width() <= 0.0f || visible.height() <= 0.0f) {
+            g_fillsSkipped.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    }
+
     void* renderer = singleton();
     if (!renderer) {
         g_fillsSkipped.fetch_add(1, std::memory_order_relaxed);
         return;
     }
 
-    fill(renderer, area.left, area.top, area.right, area.bottom, &colour);
+    fill(renderer, visible.left, visible.top, visible.right, visible.bottom, &colour);
     g_fills.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -78,26 +100,29 @@ D2D1_RECT_F toD2D(const Rect& area) {
     return D2D1::RectF(area.left, area.top, area.right, area.bottom);
 }
 
-ID2D1SolidColorBrush* brush(const Colour& colour) {
-    static ID2D1SolidColorBrush* cached = nullptr;
-    static ID2D1DeviceContext* owner = nullptr;
+// At namespace scope rather than inside brush(), so teardown can drop them: a
+// brush holds a reference to its context, which holds the device, so a cache
+// left behind kept a whole D3D11 device alive after unload.
+ID2D1SolidColorBrush* g_brush = nullptr;
+ID2D1DeviceContext* g_brushOwner = nullptr;
 
+ID2D1SolidColorBrush* brush(const Colour& colour) {
     auto* context = D2DOverlay::get().context();
     if (!context)
         return nullptr;
 
-    if (owner != context) {
-        if (cached)
-            cached->Release();
-        cached = nullptr;
-        owner = context;
+    if (g_brushOwner != context) {
+        if (g_brush)
+            g_brush->Release();
+        g_brush = nullptr;
+        g_brushOwner = context;
     }
-    if (!cached && FAILED(context->CreateSolidColorBrush(toD2D(colour), &cached)))
+    if (!g_brush && FAILED(context->CreateSolidColorBrush(toD2D(colour), &g_brush)))
         return nullptr;
 
-    cached->SetColor(toD2D(colour));
-    cached->SetOpacity(1.0f);
-    return cached;
+    g_brush->SetColor(toD2D(colour));
+    g_brush->SetOpacity(1.0f);
+    return g_brush;
 }
 
 DWRITE_FONT_WEIGHT toDWrite(DrawUtils::Weight weight) {
@@ -112,8 +137,10 @@ DWRITE_FONT_WEIGHT toDWrite(DrawUtils::Weight weight) {
 
 // Text formats are immutable, so one per size/weight pair is cached for the
 // lifetime of the overlay rather than rebuilt per draw.
+std::unordered_map<uint64_t, IDWriteTextFormat*> g_formats;
+
 IDWriteTextFormat* textFormat(float size, DrawUtils::Weight weight) {
-    static std::unordered_map<uint64_t, IDWriteTextFormat*> cache;
+    auto& cache = g_formats;
 
     auto* dwrite = D2DOverlay::get().dwrite();
     if (!dwrite)
@@ -356,10 +383,22 @@ void DrawUtils::text(const std::string& value, const Vec2& position, const Colou
         }
         // The bitmap font has one size; only alignment can be honoured.
         float x = position.x;
-        if (align != Align::Left) {
-            const float width = font->width(value, 1.0f);
+        const float width = font->width(value, 1.0f);
+        if (align != Align::Left)
             x -= align == Align::Centre ? width * 0.5f : width;
+
+        // No scissor here, so a line that would land outside the clip is dropped
+        // whole. Half a row of text hanging below a scrolling list reads far
+        // worse than a row that simply is not there.
+        if (const Rect* clip = softClip()) {
+            const float line = textHeight(size);
+            if (position.y < clip->top || position.y + line > clip->bottom ||
+                x + width < clip->left || x > clip->right) {
+                g_textsSkipped.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
         }
+
         font->draw(value, x, position.y, colour, true);
         g_texts.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -506,6 +545,10 @@ float DrawUtils::imageAspect(int resourceId) {
 }
 
 void DrawUtils::pushClip(const Rect& area, float radius) {
+    // Nested clips intersect, so an inner region can never draw outside an outer
+    // one - the window clip stays honoured by the list clip inside it.
+    g_softClip.push_back(g_softClip.empty() ? area : intersect(area, g_softClip.back()));
+
     auto* context = D2DOverlay::get().context();
     if (!usingD2D() || !context) {
         g_clipStack.push_back(false);
@@ -545,7 +588,26 @@ void DrawUtils::pushClip(const Rect& area, float radius) {
     g_clipStack.push_back(true);
 }
 
+void DrawUtils::releaseResources() {
+    if (g_brush)
+        g_brush->Release();
+    g_brush = nullptr;
+    g_brushOwner = nullptr;
+
+    for (auto& [key, format] : g_formats) {
+        if (format)
+            format->Release();
+    }
+    g_formats.clear();
+
+    g_clipStack.clear();
+    g_softClip.clear();
+}
+
 void DrawUtils::popClip() {
+    if (!g_softClip.empty())
+        g_softClip.pop_back();
+
     if (g_clipStack.empty())
         return;
 

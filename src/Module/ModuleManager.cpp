@@ -30,6 +30,8 @@ void ModuleManager::registerAll() {
     // Render
     add<modules::ArrayList>();
     add<modules::FogColor>();
+    add<modules::FullBright>();
+    add<modules::JavaFov>();
     add<modules::ItemPhysics>();
     add<modules::NoDynamicFov>();
     add<modules::NoHurtCam>();

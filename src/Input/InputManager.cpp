@@ -1,10 +1,14 @@
 #include "Input/InputManager.h"
 
 #include <Windows.h>
+#include <TlHelp32.h>
+
+#include <unordered_map>
 
 #include "Event/Events.h"
 #include "Module/ModuleManager.h"
 #include "Render/DrawUtils.h"
+#include "Utils/Logger.h"
 #include "Utils/Platform.h"
 
 namespace aerial::input {
@@ -30,7 +34,165 @@ bool ignoredKey(int key) {
     }
 }
 
+// ── Wheel ────────────────────────────────────────────────────────────────────
+//
+// There is no "is the wheel down" state to poll: a detent is a one-off message.
+// So a WH_GETMESSAGE hook is parked on the thread that owns the game window and
+// watches its queue. WH_GETMESSAGE rather than WH_MOUSE because a CoreWindow
+// receives the wheel as WM_POINTERWHEEL, which the mouse hook never reports.
+//
+// The hook runs on the game's thread; the accumulator is the handoff to ours.
+std::atomic<int> g_wheelDelta{0};
+std::atomic<bool> g_swallowWheel{false};
+HHOOK g_wheelHook = nullptr;   // the game window's thread, for reporting
+DWORD g_hookedThread = 0;
+std::unordered_map<DWORD, HHOOK> g_threadHooks;
+ULONGLONG g_lastScan = 0;
+
+// Diagnostics: which of the three possible wheel paths is actually feeding us.
+std::atomic<uint64_t> g_hookCalls{0};
+std::atomic<uint64_t> g_wheelMessages{0};
+std::atomic<uint32_t> g_lastPointerMessage{0};
+
+constexpr UINT kPointerWheel = 0x024E;   // WM_POINTERWHEEL
+constexpr UINT kPointerHWheel = 0x024F;  // WM_POINTERHWHEEL
+
+// Raw input carries the wheel in usButtonData rather than as a wheel message,
+// and that is the path a game using WM_INPUT for mouse look takes.
+bool rawInputWheel(LPARAM lParam, int& delta) {
+    UINT size = 0;
+    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, nullptr, &size,
+                        sizeof(RAWINPUTHEADER)) != 0)
+        return false;
+    if (size == 0 || size > sizeof(RAWINPUT))
+        return false;
+
+    RAWINPUT raw{};
+    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &size,
+                        sizeof(RAWINPUTHEADER)) != size)
+        return false;
+
+    if (raw.header.dwType != RIM_TYPEMOUSE)
+        return false;
+    if ((raw.data.mouse.usButtonFlags & RI_MOUSE_WHEEL) == 0)
+        return false;
+
+    // Signed: usButtonData is a short in disguise.
+    delta = static_cast<short>(raw.data.mouse.usButtonData);
+    return true;
+}
+
+LRESULT CALLBACK wheelProc(int code, WPARAM wParam, LPARAM lParam) {
+    // The hook is called for peeks as well as for removals; acting on both would
+    // count every detent twice or more.
+    if (code == HC_ACTION && lParam && wParam == PM_REMOVE) {
+        g_hookCalls.fetch_add(1, std::memory_order_relaxed);
+
+        auto* message = reinterpret_cast<MSG*>(lParam);
+        const UINT id = message->message;
+
+        // Remember anything pointer-shaped, so a wheel arriving by a route not
+        // handled below still shows up in the log.
+        if (id == WM_INPUT || (id >= WM_MOUSEFIRST && id <= WM_MOUSELAST) ||
+            (id >= 0x0240 && id <= 0x0250))
+            g_lastPointerMessage.store(id, std::memory_order_relaxed);
+
+        if (id == WM_MOUSEWHEEL || id == kPointerWheel || id == kPointerHWheel) {
+            g_wheelDelta.fetch_add(GET_WHEEL_DELTA_WPARAM(message->wParam),
+                                   std::memory_order_relaxed);
+            g_wheelMessages.fetch_add(1, std::memory_order_relaxed);
+
+            if (g_swallowWheel.load(std::memory_order_relaxed))
+                message->message = WM_NULL;
+        } else if (id == WM_INPUT) {
+            // Not swallowed: WM_INPUT also carries mouse look, and dropping it
+            // would freeze the view rather than just the wheel.
+            int delta = 0;
+            if (rawInputWheel(message->lParam, delta)) {
+                g_wheelDelta.fetch_add(delta, std::memory_order_relaxed);
+                g_wheelMessages.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
 } // namespace
+
+void InputManager::installWheelHook() {
+    // Which thread pumps the wheel is not knowable from outside: a DirectX UWP
+    // app can run its input on a core-independent thread that has nothing to do
+    // with the one owning the CoreWindow. So every thread in the process gets a
+    // hook. On a thread without a message queue that costs nothing, and it
+    // removes the guesswork entirely.
+    const DWORD windowThread = platform::gameWindowThread();
+    if (!windowThread)
+        return;
+
+    // Threads come and go, so this re-scans - but not every sample.
+    const ULONGLONG now = GetTickCount64();
+    if (g_wheelHook && now - g_lastScan < 3000)
+        return;
+    g_lastScan = now;
+
+    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE)
+        return;
+
+    const DWORD self = GetCurrentProcessId();
+    THREADENTRY32 entry{};
+    entry.dwSize = sizeof(entry);
+
+    int added = 0;
+    if (Thread32First(snapshot, &entry)) {
+        do {
+            if (entry.th32OwnerProcessID != self)
+                continue;
+            if (g_threadHooks.find(entry.th32ThreadID) != g_threadHooks.end())
+                continue;
+
+            // hMod is null on purpose: the hook lives in this process, so
+            // Windows wants it that way and there is no module to keep loaded.
+            const HHOOK hook = SetWindowsHookExW(WH_GETMESSAGE, wheelProc, nullptr,
+                                                 entry.th32ThreadID);
+            if (!hook)
+                continue;
+
+            g_threadHooks.emplace(entry.th32ThreadID, hook);
+            ++added;
+
+            if (entry.th32ThreadID == windowThread) {
+                g_wheelHook = hook;
+                g_hookedThread = windowThread;
+            }
+        } while (Thread32Next(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+
+    if (!g_wheelHook && !g_threadHooks.empty())
+        g_wheelHook = g_threadHooks.begin()->second;
+
+    if (added)
+        LOG_INFO("Input", "wheel hook on {} thread(s) (+{}), window thread {}{}",
+                 g_threadHooks.size(), added, windowThread,
+                 g_hookedThread ? "" : " NOT hooked");
+}
+
+void InputManager::removeWheelHook() {
+    for (const auto& [thread, hook] : g_threadHooks)
+        UnhookWindowsHookEx(hook);
+
+    g_threadHooks.clear();
+    g_wheelHook = nullptr;
+    g_hookedThread = 0;
+    g_lastScan = 0;
+}
+
+bool InputManager::wheelHooked() const { return g_wheelHook != nullptr; }
+
+void InputManager::setSwallowWheel(bool swallow) {
+    g_swallowWheel.store(swallow, std::memory_order_relaxed);
+}
 
 InputManager& InputManager::get() {
     static InputManager instance;
@@ -40,9 +202,15 @@ InputManager& InputManager::get() {
 bool InputManager::gameFocused() { return platform::gameFocused(); }
 
 InputManager::Stats InputManager::stats() const {
-    return {m_samples.load(std::memory_order_relaxed),   m_polls.load(std::memory_order_relaxed),
-            m_transitions.load(std::memory_order_relaxed), m_lastKey.load(std::memory_order_relaxed),
-            m_asyncDowns.load(std::memory_order_relaxed), m_syncDowns.load(std::memory_order_relaxed)};
+    return {m_samples.load(std::memory_order_relaxed),
+            m_polls.load(std::memory_order_relaxed),
+            m_transitions.load(std::memory_order_relaxed),
+            m_lastKey.load(std::memory_order_relaxed),
+            m_asyncDowns.load(std::memory_order_relaxed),
+            m_syncDowns.load(std::memory_order_relaxed),
+            g_hookCalls.load(std::memory_order_relaxed),
+            g_wheelMessages.load(std::memory_order_relaxed),
+            g_lastPointerMessage.load(std::memory_order_relaxed)};
 }
 
 void InputManager::sample() {
@@ -51,6 +219,10 @@ void InputManager::sample() {
     // Without this the synchronous key APIs below have no input queue to read
     // from and report nothing at all.
     platform::attachToGameInput();
+
+    // The game window does not exist for the first frames after injection, so
+    // this keeps trying until it does. It returns immediately once attached.
+    installWheelHook();
 
     const bool focused = platform::gameFocused();
 
@@ -99,6 +271,18 @@ void InputManager::poll() {
     }
 
     auto& bus = EventBus::get();
+
+    // Wheel first: it is accumulated by the message hook between polls, and one
+    // event carrying the whole delta is both cheaper and smoother than replaying
+    // a detent at a time.
+    if (const int delta = g_wheelDelta.exchange(0, std::memory_order_relaxed); delta != 0) {
+        MouseEvent wheel;
+        wheel.button = delta > 0 ? MouseEvent::Button::ScrollUp : MouseEvent::Button::ScrollDown;
+        wheel.down = true;
+        wheel.position = m_cursor;
+        wheel.wheel = static_cast<float>(delta) / WHEEL_DELTA;
+        bus.dispatch(wheel);
+    }
 
     for (int key = 1; key < kKeyCount; ++key) {
         const size_t index = static_cast<size_t>(key);

@@ -30,8 +30,15 @@ void HookManager::shutdown() {
         return;
 
     // Disable everything in one transaction first: this suspends the game's
-    // threads once and guarantees no thread is parked inside a trampoline.
+    // threads once and rewinds any thread parked inside a trampoline.
     MH_DisableHook(MH_ALL_HOOKS);
+
+    // MinHook's blind spot is a thread already inside one of our detour bodies -
+    // it can relocate an instruction pointer that sits in a trampoline, but not
+    // one that sits in this DLL. The wait has to come before MH_Uninitialize,
+    // which frees the very memory those frames are executing from; doing it
+    // afterwards, as this used to, protected nothing.
+    Sleep(250);
 
     for (auto it = m_detours.rbegin(); it != m_detours.rend(); ++it)
         (*it)->detach();
@@ -39,10 +46,6 @@ void HookManager::shutdown() {
 
     MH_Uninitialize();
     m_initialised = false;
-
-    // Detours are removed, but a thread can still be executing code copied into
-    // a trampoline. Give those frames time to unwind before the DLL is unmapped.
-    Sleep(200);
 }
 
 bool HookManager::enableAll() {

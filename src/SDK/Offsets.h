@@ -171,6 +171,13 @@ inline constexpr uintptr_t ScreenView_processEvents    = 0x3F2470;
 // before use, so the two-argument signature is the complete one.
 inline constexpr uintptr_t Options_getFloat            = 0x495600;
 
+// Options::getGamma(this) -> float. Single argument; the body only reads rcx.
+inline constexpr uintptr_t Options_getGamma            = 0x4885C0;
+
+// LevelRendererPlayer::getFov(this, partialTicks, bool) -> float. The body
+// reads xmm1 and r8b, so all three are real arguments.
+inline constexpr uintptr_t LevelRendererPlayer_getFov  = 0x5B6830;
+
 // Matrix::translate(matrix, x, y, z) - writes the 64-byte result back through
 // rcx. Verified: it stores xmm1/xmm2/xmm3 into a local vector and copies 0x40
 // bytes into the matrix it was handed.
@@ -182,6 +189,19 @@ inline constexpr uintptr_t Matrix_translate            = 0x15D390;
 // it performs, which is the instruction after the call at 0x56FE7E.
 inline constexpr uintptr_t ItemRenderer_render         = 0x56FCC0;
 inline constexpr uintptr_t ItemRenderer_translateReturn = 0x56FE83;
+
+// glm::rotate(matrix, angle, x, y, z) - five arguments, the fifth on the stack
+// at [rsp+0x20]. Both call sites below set it up identically.
+inline constexpr uintptr_t Matrix_rotate               = 0x180010;
+
+// ItemRenderer::render turns the item twice after the translate we hook, which
+// is why our own orientation was being overridden:
+//   0x570319 rotates about Y by an angle derived from a direction vector - the
+//            billboard that makes a sprite follow the camera.
+//   0x5704F5 rotates about Y by the bob-derived angle - the vanilla spin.
+// These are the return addresses, which is how each call is identified.
+inline constexpr uintptr_t ItemRenderer_billboardReturn = 0x57031E;
+inline constexpr uintptr_t ItemRenderer_spinReturn      = 0x5704FA;
 
 // LevelRendererCamera::setupFog computes the fog colour from the biome's RGBA
 // at [biome+0xD0], scales it by brightness and stores it to [this+0x3C8].
@@ -356,10 +376,32 @@ inline constexpr ptrdiff_t posExtrapolated = 0xA0; // Vec3
 inline constexpr ptrdiff_t velocity      = 0xAC;   // Vec3, verified
 inline constexpr ptrdiff_t rot           = 0xB8;   // Vec2 {pitch, yaw}, verified
 inline constexpr ptrdiff_t rotOld        = 0xC0;   // Vec2
+// Entity::save writes this through CompoundTag::putByte("OnGround") and the
+// matching load writes the result straight back to it, so both directions name
+// the same field.
+inline constexpr ptrdiff_t onGround      = 0x12E;  // bool, verified
 inline constexpr ptrdiff_t flags         = 0xEC;   // bitfield read by GameMode::attack
 inline constexpr ptrdiff_t entityData    = 0xF0;   // vector<EntityDataItem*> begin/end
 inline constexpr ptrdiff_t bodyHeight    = 0x19C;  // scaled by getEyeHeight
 } // namespace entity
+
+// The dropped-item entity. ItemRenderer::render takes the actor in rdx and
+// immediately does `lea r12, [rdx + 0xE58]`, then reads the stack through r12.
+namespace itemActor {
+inline constexpr ptrdiff_t itemStack = 0xE58;
+inline constexpr ptrdiff_t age       = 0xEA8;  // int, ticks; drives the bob
+inline constexpr ptrdiff_t bobOffset = 0xEB4;  // float, per-item bob phase
+inline constexpr ptrdiff_t noBob     = 0xEC0;  // bool; when set the game skips its own bob
+} // namespace itemActor
+
+// Read at 0x56FE83 onwards: the block pointer is tested first and the item
+// pointer second, which is exactly how the renderer decides whether to draw a
+// cube or a flat sprite.
+namespace itemStack {
+inline constexpr ptrdiff_t count = 0x00;  // byte
+inline constexpr ptrdiff_t item  = 0x10;  // Item*
+inline constexpr ptrdiff_t block = 0x18;  // Block*, null for non-block items
+} // namespace itemStack
 
 namespace localPlayer {
 // LocalPlayer::displayClientMessage walks [this+0x15F0] -> [+0x30] -> [+0x170].

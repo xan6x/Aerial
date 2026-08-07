@@ -36,6 +36,18 @@ public:
     void setCapture(bool capture) { m_captured = capture; }
     bool captured() const { return m_captured; }
 
+    // The wheel is not key state, so GetAsyncKeyState cannot see it. It is read
+    // from the game thread's own message queue instead; see InputManager.cpp.
+    // Both are safe to call repeatedly.
+    void installWheelHook();
+    void removeWheelHook();
+    bool wheelHooked() const;
+
+    // Drops wheel messages before the game gets them. The open menu wants the
+    // wheel for its own list, and letting it through swaps the held item at the
+    // same time.
+    void setSwallowWheel(bool swallow);
+
     static bool gameFocused();
     static const char* keyName(int virtualKey);
 
@@ -51,6 +63,12 @@ public:
         int lastKey = 0;
         int asyncDowns = 0;   // keys GetAsyncKeyState reports held
         int syncDowns = 0;    // keys GetKeyboardState reports held
+
+        // Wheel plumbing: how much of the game's message queue the hook sees,
+        // and by which route the wheel arrives when it does.
+        uint64_t hookCalls = 0;
+        uint64_t wheelMessages = 0;
+        uint32_t lastPointerMessage = 0;
     };
     Stats stats() const;
 

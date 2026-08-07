@@ -21,6 +21,8 @@
 // Render
 #include "Module/Modules/ArrayList.h"
 #include "Module/Modules/FogColor.h"
+#include "Module/Modules/FullBright.h"
+#include "Module/Modules/JavaFov.h"
 #include "Module/Modules/ItemPhysics.h"
 #include "Module/Modules/NoDynamicFov.h"
 #include "Module/Modules/NoHurtCam.h"

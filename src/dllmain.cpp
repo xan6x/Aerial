@@ -33,11 +33,14 @@ void logHeartbeat() {
 
     LOG_INFO("Watchdog",
              "updates +{} frames +{} ticks +{} overlays +{} | samples +{} polls +{} keys +{} last '{}' | "
-             "down async={} sync={} | fills {}/{} texts {}/{} | focused={} | fg {} pid {} class '{}'",
+             "down async={} sync={} | msgs +{} wheels +{} last pointer msg 0x{:04X} | "
+             "fills {}/{} texts {}/{} | focused={} | fg {} pid {} class '{}'",
              updates - lastUpdates, frames - lastFrames, ticks - lastTicks, overlays - lastOverlays,
              input.samples - lastInput.samples, input.polls - lastInput.polls,
              input.transitions - lastInput.transitions,
              aerial::input::InputManager::keyName(input.lastKey), input.asyncDowns, input.syncDowns,
+             input.hookCalls - lastInput.hookCalls, input.wheelMessages - lastInput.wheelMessages,
+             input.lastPointerMessage,
              draw.fills, draw.fillsSkipped, draw.texts, draw.textsSkipped,
              aerial::platform::gameFocused(), static_cast<void*>(foreground.window),
              foreground.processId, foreground.className);

@@ -82,6 +82,11 @@ public:
     static void pushClip(const Rect& area, float radius = 0.0f);
     static void popClip();
 
+    // Drops the cached brush and text formats. They hold references to the
+    // overlay's device context, so leaving them behind on unload keeps a whole
+    // D3D11 device alive. Call before D2DOverlay::shutdown().
+    static void releaseResources();
+
     // --- Diagnostics --------------------------------------------------------
     struct Stats {
         uint32_t fills = 0;

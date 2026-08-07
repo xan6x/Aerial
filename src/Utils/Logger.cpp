@@ -64,7 +64,13 @@ void Logger::init(bool allocConsole) {
 
     if (!m_file) {
         const auto path = logDirectory() / L"latest.log";
-        _wfopen_s(&m_file, path.c_str(), L"w");
+
+        // Append rather than truncate. Inject, eject and inject again is one
+        // debugging session, and truncating threw away the half that explained
+        // the other half.
+        _wfopen_s(&m_file, path.c_str(), L"a");
+        if (m_file)
+            std::fputs("\n──── session start ────\n", m_file);
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 #include <algorithm>
+#include <cctype>
 #include <format>
 
 #include "Assets/Resources.h"
@@ -79,6 +80,20 @@ Rect sliderTrack(const Rect& row, float scale) {
             y + height * 0.5f};
 }
 
+std::string lowered(std::string value) {
+    for (char& c : value)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return value;
+}
+
+// Name first, then the description - so "fov" finds JavaFov, and "sprint" also
+// finds it through "Java's sprint field-of-view easing".
+bool matchesSearch(const Module& module, const std::string& query) {
+    const std::string needle = lowered(query);
+    return lowered(module.name()).find(needle) != std::string::npos ||
+           lowered(module.description()).find(needle) != std::string::npos;
+}
+
 // Ease-out cubic: fast start, soft landing. Used for the open transition.
 float easeOut(float t) {
     const float inverted = 1.0f - t;
@@ -100,12 +115,28 @@ Animated& ClickGui::animation(const void* key, float initial) {
 }
 
 std::vector<Module*> ClickGui::visibleModules() const {
-    return ModuleManager::get().byCategory(m_category);
+    if (m_search.empty())
+        return ModuleManager::get().byCategory(m_category);
+
+    std::vector<Module*> found;
+    for (const auto& module : ModuleManager::get().modules()) {
+        if (matchesSearch(*module, m_search))
+            found.push_back(module.get());
+    }
+    return found;
+}
+
+ClickGui::ScrollState& ClickGui::activeScroll() {
+    return m_page == Page::Configs ? m_configScroll : m_moduleScroll;
 }
 
 void ClickGui::open() {
     m_open = true;
     m_openAnimation.set(1.0f);
+
+    // The menu owns the wheel while it is up; without this a scroll through the
+    // module list also swaps the held item.
+    input::InputManager::get().setSwallowWheel(true);
 
     auto& context = sdk::Context::get();
     if (!context.inGame())
@@ -123,8 +154,11 @@ void ClickGui::close() {
     m_draggingSlider = nullptr;
     m_bindingModule = nullptr;
     m_editingName = false;
+    m_searching = false;
+    m_search.clear();
 
     input::InputManager::get().setCapture(false);
+    input::InputManager::get().setSwallowWheel(false);
 
     // Restore the cursor if - and only if - we were the ones who released it.
     // Gating this on inGame() the way open() does was a bug: open in a world and
@@ -207,10 +241,23 @@ void ClickGui::render(Render2DEvent& event) {
     renderCharacter(layout, amount);
     renderRail(layout, amount);
 
+    // Everything from here on is inside the scrolling viewport. Its hit areas
+    // are drawn clipped, so they have to be tested clipped too - otherwise a row
+    // that has scrolled out of sight still answers clicks from wherever it
+    // happens to sit.
+    const size_t contentHits = m_hits.size();
+
     if (m_page == Page::Configs)
         renderConfigs(layout, amount);
     else
         renderCards(layout, amount);
+
+    const Rect& view = layout.content;
+    m_hits.erase(std::remove_if(m_hits.begin() + static_cast<ptrdiff_t>(contentHits), m_hits.end(),
+                                [&view](const Hit& hit) {
+                                    return hit.area.bottom <= view.top || hit.area.top >= view.bottom;
+                                }),
+                 m_hits.end());
 
     if (m_draggingSlider && (GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
         const float t = std::clamp((m_cursor.x - m_draggingSliderRect.left) /
@@ -256,14 +303,121 @@ void ClickGui::renderChrome(const Layout& layout, float amount) {
                      layout.window.right - kPadding * scale, layout.header.bottom},
                     Colour::rgb(0xFFFFFF, 0.07f * amount));
 
-    const std::string hint = std::format("{} to close", input::InputManager::keyName(
-                                                            [] {
-                                                                auto* gui = ModuleManager::get().find("ClickGui");
-                                                                return gui ? gui->keybind() : 0;
-                                                            }()));
-    DrawUtils::text(hint, {layout.header.right - kPadding * 1.4f * scale, title.y + 6.0f * scale},
-                    theme.textDim.withAlpha(0.75f * amount), 12.0f * scale, Weight::Regular,
-                    Align::Right);
+    // Key hints, laid out right to left: close first, then eject furthest from
+    // the list so it is the one you have to reach for deliberately.
+    const float hintSize = 12.0f * scale;
+    const float hintY = title.y + 6.0f * scale;
+    const float hintRight = layout.header.right - kPadding * 1.4f * scale;
+
+    const Colour hintText = theme.textDim.withAlpha(0.75f * amount);
+    const Colour hintKey = theme.text.withAlpha(0.9f * amount);
+
+    float x = hintRight;
+    auto segment = [&](const std::string& value, const Colour& colour, Weight weight, float gap) {
+        DrawUtils::text(value, {x, hintY}, colour, hintSize, weight, Align::Right);
+        x -= DrawUtils::textWidth(value, hintSize, weight) + gap;
+    };
+
+    segment("eject", hintText, Weight::Regular, 5.0f * scale);
+    segment("End", hintKey, Weight::SemiBold, 9.0f * scale);
+    segment("\xE2\x80\xA2", theme.textDim.withAlpha(0.4f * amount), Weight::Regular, 9.0f * scale);
+    segment("close", hintText, Weight::Regular, 5.0f * scale);
+    segment(input::InputManager::keyName([] {
+                auto* gui = ModuleManager::get().find("ClickGui");
+                return gui ? gui->keybind() : 0;
+            }()),
+            hintKey, Weight::SemiBold, 0.0f);
+
+    const float hintWidth = hintRight - x;
+
+    // Search sits between the wordmark and the close hint. In the header rather
+    // than above the list so it never scrolls away, and so it works the same on
+    // whichever page is showing.
+    const float fieldHeight = 26.0f * scale;
+    const float fieldRight = layout.header.right - kPadding * 2.2f * scale - hintWidth;
+    const float fieldLeft = std::max(title.x + titleWidth + 70.0f * scale,
+                                     fieldRight - 260.0f * scale);
+    const float centreY = layout.header.top + layout.header.height() * 0.5f;
+
+    if (fieldRight - fieldLeft > 60.0f * scale)
+        renderSearch({fieldLeft, centreY - fieldHeight * 0.5f, fieldRight, centreY + fieldHeight * 0.5f},
+                     scale, amount);
+}
+
+void ClickGui::renderSearch(const Rect& field, float scale, float amount) {
+    const Theme& theme = Theme::get();
+    const bool hovered = field.contains(m_cursor);
+    const float radius = field.height() * 0.5f;
+
+    DrawUtils::fill(field, Colour::rgb(0x000000, m_searching ? 0.34f : (hovered ? 0.26f : 0.18f)),
+                    radius);
+    DrawUtils::outline(field,
+                       m_searching ? theme.menuAccent().withAlpha(0.55f * amount)
+                                   : Colour::rgb(0xFFFFFF, (hovered ? 0.14f : 0.07f) * amount),
+                       1.0f * scale, radius);
+
+    // A drawn lens rather than a glyph: the fallback backend has no icon font,
+    // and two circles plus a line cost nothing.
+    const float lens = 4.6f * scale;
+    const Vec2 eye{field.left + 13.0f * scale, field.top + field.height() * 0.5f};
+    const Colour icon = (m_searching ? theme.text : theme.textDim).withAlpha(0.85f * amount);
+    DrawUtils::outline({eye.x - lens, eye.y - lens, eye.x + lens, eye.y + lens}, icon, 1.4f * scale,
+                       lens);
+    DrawUtils::fill({eye.x + lens * 0.6f, eye.y + lens * 0.6f, eye.x + lens * 1.7f,
+                     eye.y + lens * 1.7f},
+                    icon, 1.0f * scale);
+
+    const float textLeft = eye.x + lens + 8.0f * scale;
+    const float textY = field.top + (field.height() - DrawUtils::textHeight(12.5f * scale)) * 0.5f;
+
+    // Room for the clear button and the result count, when there is something to
+    // clear. Without the reserve the query runs straight under them.
+    const bool empty = m_search.empty();
+    const float textRight = field.right - (empty ? 12.0f * scale : 56.0f * scale);
+    const std::string shown = empty ? "Search modules" : m_search;
+
+    DrawUtils::text(DrawUtils::fit(shown, textRight - textLeft, 12.5f * scale), {textLeft, textY},
+                    empty ? theme.textDim.withAlpha(0.7f * amount) : theme.text.withAlpha(amount),
+                    12.5f * scale, Weight::Regular);
+
+    if (m_searching) {
+        const float phase = std::fmod(clockSeconds(), 1.0f);
+        if (phase < 0.55f) {
+            const float caretX = textLeft + DrawUtils::textWidth(m_search, 12.5f * scale);
+            DrawUtils::fill({caretX + 1.0f * scale, field.top + 6.0f * scale, caretX + 2.2f * scale,
+                             field.bottom - 6.0f * scale},
+                            theme.textActive.withAlpha(amount));
+        }
+    }
+
+    // Pushed before the clear button: hits are tested last-first, so the smaller
+    // control has to come second to win.
+    m_hits.push_back({field, HitKind::SearchField, nullptr, nullptr, Category::Misc, {}});
+
+    if (!empty) {
+        const float side = 14.0f * scale;
+        const Rect clear{field.right - 10.0f * scale - side,
+                         field.top + (field.height() - side) * 0.5f, field.right - 10.0f * scale,
+                         field.top + (field.height() + side) * 0.5f};
+
+        const bool over = clear.contains(m_cursor);
+        DrawUtils::fill(clear, Colour::rgb(0xFFFFFF, over ? 0.16f : 0.09f), side * 0.5f);
+        DrawUtils::text("x",
+                        {clear.left + side * 0.5f,
+                         clear.top + (side - DrawUtils::textHeight(11.0f * scale)) * 0.5f},
+                        (over ? theme.textActive : theme.textDim).withAlpha(amount), 11.0f * scale,
+                        Weight::SemiBold, Align::Centre);
+
+        m_hits.push_back({clear, HitKind::SearchClear, nullptr, nullptr, Category::Misc, {}});
+
+        // Result count, so an empty result set is obviously empty rather than
+        // looking like a category that happens to hold nothing.
+        const size_t found = visibleModules().size();
+        DrawUtils::text(std::format("{}", found),
+                        {clear.left - 6.0f * scale, textY},
+                        theme.textDim.withAlpha(0.75f * amount), 11.5f * scale, Weight::Medium,
+                        Align::Right);
+    }
 }
 
 void ClickGui::renderCharacter(const Layout& layout, float amount) {
@@ -317,7 +471,8 @@ void ClickGui::renderRail(const Layout& layout, float amount) {
         const Rect item{layout.rail.left + kPadding * scale, y,
                         layout.rail.right - kPadding * 0.5f * scale, y + itemHeight};
 
-        const bool selected = m_page == Page::Modules && category == m_category;
+        // A live search spans every category, so none of them is "the" one.
+        const bool selected = m_page == Page::Modules && m_search.empty() && category == m_category;
         const bool hovered = item.contains(m_cursor);
         const bool empty = modules.empty();
 
@@ -396,17 +551,30 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
     DrawUtils::pushClip(layout.content);
 
     if (modules.empty()) {
-        DrawUtils::text("Nothing here yet",
+        DrawUtils::text(m_search.empty() ? "Nothing here yet" : "No module matches that",
                         {layout.content.left + (layout.cardsRight - layout.content.left) * 0.5f,
                          layout.content.top + layout.content.height() * 0.5f - 10.0f * scale},
                         theme.textDim.withAlpha(0.6f * amount), 14.0f * scale, Weight::Regular,
                         Align::Centre);
+        m_moduleScroll.max = 0.0f;
+        m_moduleScroll.reset();
         DrawUtils::popClip();
         return;
     }
 
-    float y = layout.content.top + kPadding * scale;
+    // Clamped here rather than at the wheel, because the extent is only known
+    // once the list has been measured - and it changes as cards expand.
+    m_moduleScroll.position.set(std::clamp(m_moduleScroll.position.target(), 0.0f, m_moduleScroll.max));
+    const float scrolled = m_moduleScroll.position.update(theme.animationSpeed);
+
+    const float top = layout.content.top + kPadding * scale;
+    float y = top - scrolled;
     int index = 0;
+
+    // Give the scrollbar its own gutter once there is one, so the thumb never
+    // sits on top of a toggle.
+    const float right = layout.cardsRight - kPadding * 1.4f * scale -
+                        (m_moduleScroll.max > 0.5f ? 9.0f * scale : 0.0f);
 
     for (Module* module : modules) {
         const float cardHeight = cardHeightFor(scale);
@@ -425,43 +593,81 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
                 settingsHeight += 8.0f * scale;
         }
 
-        const Rect group{layout.content.left + kPadding * 0.5f * scale, y,
-                         layout.cardsRight - kPadding * 1.4f * scale,
+        const Rect group{layout.content.left + kPadding * 0.5f * scale, y, right,
                          y + cardHeight + settingsHeight};
         const Rect card{group.left, group.top, group.right, group.top + cardHeight};
 
-        auto& hover = m_hoverAnimations.try_emplace(module, Animated{0.0f}).first->second;
-        hover.set(card.contains(m_cursor) ? 1.0f : 0.0f);
-        const float lift = hover.update(theme.animationSpeed);
+        // Rows scrolled out of view are skipped outright. Drawing them would be
+        // clipped away anyway, but they would still take hover and still record
+        // hit areas, so a card off the top of the list could answer a click.
+        const bool visible =
+            group.bottom > layout.content.top && group.top < layout.content.bottom;
+        const int cardIndex = index++;
 
-        // Deliberately translucent: an opaque body would slice the artwork
-        // behind it into strips, which is exactly how the previous attempt went
-        // wrong. Readability comes from the text weight and shadow instead.
-        const float radius = kCardRadius * scale;
-        DrawUtils::fill(group, Colour::rgb(0xFFFFFF, 0.045f + 0.035f * lift), radius);
-        DrawUtils::outline(group, Colour::rgb(0xFFFFFF, 0.05f + 0.04f * lift), 1.0f * scale, radius);
+        if (visible) {
+            auto& hover = m_hoverAnimations.try_emplace(module, Animated{0.0f}).first->second;
+            hover.set(card.contains(m_cursor) ? 1.0f : 0.0f);
+            const float lift = hover.update(theme.animationSpeed);
 
-        renderCard(*module, card, scale, index++);
+            // Deliberately translucent: an opaque body would slice the artwork
+            // behind it into strips, which is exactly how the previous attempt
+            // went wrong. Readability comes from the text weight and shadow.
+            const float radius = kCardRadius * scale;
+            DrawUtils::fill(group, Colour::rgb(0xFFFFFF, 0.045f + 0.035f * lift), radius);
+            DrawUtils::outline(group, Colour::rgb(0xFFFFFF, 0.05f + 0.04f * lift), 1.0f * scale,
+                               radius);
 
-        if (expanded && settingsHeight > 0.0f) {
-            DrawUtils::fill({group.left + 14.0f * scale, card.bottom, group.right - 14.0f * scale,
-                             card.bottom + 1.0f * scale},
-                            Colour::rgb(0xFFFFFF, 0.06f));
+            renderCard(*module, card, scale, cardIndex);
 
-            float rowY = card.bottom + 4.0f * scale;
-            for (const auto& setting : module->settings()) {
-                if (!setting->visible())
-                    continue;
-                const Rect row{group.left, rowY, group.right, rowY + settingHeightFor(scale)};
-                rowY += renderSetting(*setting, *module, row, scale);
+            if (expanded && settingsHeight > 0.0f) {
+                DrawUtils::fill({group.left + 14.0f * scale, card.bottom, group.right - 14.0f * scale,
+                                 card.bottom + 1.0f * scale},
+                                Colour::rgb(0xFFFFFF, 0.06f));
+
+                float rowY = card.bottom + 4.0f * scale;
+                for (const auto& setting : module->settings()) {
+                    if (!setting->visible())
+                        continue;
+                    const Rect row{group.left, rowY, group.right, rowY + settingHeightFor(scale)};
+                    rowY += renderSetting(*setting, *module, row, scale);
+                }
             }
         }
 
         y = group.bottom + kCardGap * scale;
     }
 
-    (void)amount;
+    const float contentHeight = (y + scrolled) - top + kPadding * scale;
+    m_moduleScroll.max = std::max(0.0f, contentHeight - layout.content.height());
+
+    renderScrollbar(layout.content, m_moduleScroll, contentHeight, scale, amount);
     DrawUtils::popClip();
+}
+
+void ClickGui::renderScrollbar(const Rect& view, const ScrollState& scroll, float contentHeight,
+                               float scale, float amount) {
+    if (scroll.max <= 0.5f || contentHeight <= 0.0f)
+        return;
+
+    const float width = 3.0f * scale;
+    const float inset = 6.0f * scale;
+    const Rect track{view.right - inset - width, view.top + inset, view.right - inset,
+                     view.bottom - inset};
+
+    if (track.height() <= 0.0f)
+        return;
+
+    DrawUtils::fill(track, Colour::rgb(0xFFFFFF, 0.05f * amount), width * 0.5f);
+
+    // Proportional thumb, floored so it stays grabbable in a very long list.
+    const float fraction = std::clamp(view.height() / contentHeight, 0.0f, 1.0f);
+    const float thumbHeight = std::max(26.0f * scale, track.height() * fraction);
+    const float travel = track.height() - thumbHeight;
+    const float progress = std::clamp(scroll.position.value() / scroll.max, 0.0f, 1.0f);
+    const float thumbTop = track.top + travel * progress;
+
+    DrawUtils::fill({track.left, thumbTop, track.right, thumbTop + thumbHeight},
+                    Colour::rgb(0xFFFFFF, 0.22f * amount), width * 0.5f);
 }
 
 float ClickGui::renderCard(Module& module, const Rect& card, float scale, int index) {
@@ -690,9 +896,14 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
 
     DrawUtils::pushClip(layout.content);
 
+    m_configScroll.position.set(std::clamp(m_configScroll.position.target(), 0.0f, m_configScroll.max));
+    const float scrolled = m_configScroll.position.update(theme.animationSpeed);
+
     const float left = layout.content.left + kPadding * 0.5f * scale;
-    const float right = layout.cardsRight - kPadding * 1.4f * scale;
-    float y = layout.content.top + kPadding * scale;
+    const float right = layout.cardsRight - kPadding * 1.4f * scale -
+                        (m_configScroll.max > 0.5f ? 9.0f * scale : 0.0f);
+    const float top = layout.content.top + kPadding * scale;
+    float y = top - scrolled;
 
     // ── New config ───────────────────────────────────────────────────────────
     const float rowHeight = 36.0f * scale;
@@ -744,14 +955,22 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
                         {left + (right - left) * 0.5f, y + 20.0f * scale},
                         theme.textDim.withAlpha(0.7f * amount), 13.0f * scale, Weight::Regular,
                         Align::Centre);
+        m_configScroll.max = 0.0f;
+        m_configScroll.reset();
         DrawUtils::popClip();
         return;
     }
 
     for (const std::string& name : names) {
         const Rect card{left, y, right, y + 42.0f * scale};
-        if (card.bottom > layout.content.bottom - 4.0f * scale)
-            break;
+
+        // The list used to stop at the bottom edge, which is why a long list
+        // simply lost its tail. It scrolls now, so rows off either edge are
+        // skipped rather than the loop being cut short.
+        if (card.bottom <= layout.content.top || card.top >= layout.content.bottom) {
+            y = card.bottom + kCardGap * scale;
+            continue;
+        }
 
         const bool active = name == config.current();
         const bool hovered = card.contains(m_cursor);
@@ -804,6 +1023,10 @@ void ClickGui::renderConfigs(const Layout& layout, float amount) {
         y = card.bottom + kCardGap * scale;
     }
 
+    const float contentHeight = (y + scrolled) - top + kPadding * scale;
+    m_configScroll.max = std::max(0.0f, contentHeight - layout.content.height());
+
+    renderScrollbar(layout.content, m_configScroll, contentHeight, scale, amount);
     DrawUtils::popClip();
 }
 
@@ -867,6 +1090,14 @@ void ClickGui::onMouse(MouseEvent& event) {
 
     event.cancel();
 
+    if (event.button == MouseEvent::Button::ScrollUp ||
+        event.button == MouseEvent::Button::ScrollDown) {
+        // Three rows a detent, in the same design units the layout is authored
+        // in, so the feel does not change with resolution.
+        activeScroll().nudge(-event.wheel * 3.0f * cardHeightFor(DrawUtils::uiScale()));
+        return;
+    }
+
     if (event.button == MouseEvent::Button::Left && !event.down) {
         m_draggingSlider = nullptr;
         return;
@@ -879,8 +1110,9 @@ void ClickGui::onMouse(MouseEvent& event) {
 }
 
 void ClickGui::handleClick(const Vec2& cursor, bool right) {
-    // Clicking anywhere but the name field gives up the caret.
+    // Clicking anywhere but a text field gives up the caret.
     bool keepEditing = false;
+    bool keepSearching = false;
 
     // Later hits are drawn on top, so test in reverse.
     for (auto it = m_hits.rbegin(); it != m_hits.rend(); ++it) {
@@ -892,11 +1124,29 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
         switch (it->kind) {
         case HitKind::Category:
             m_page = Page::Modules;
+            // Picking a category is an explicit "show me this instead", so it
+            // drops the search rather than filtering inside it.
+            m_search.clear();
+            m_searching = false;
             m_category = it->category;
+            m_moduleScroll.reset();
             break;
 
         case HitKind::ConfigsTab:
             m_page = Page::Configs;
+            m_configScroll.reset();
+            break;
+
+        case HitKind::SearchField:
+            m_page = Page::Modules;
+            m_searching = true;
+            keepSearching = true;
+            input::InputManager::get().setCapture(true);
+            break;
+
+        case HitKind::SearchClear:
+            m_search.clear();
+            m_moduleScroll.reset();
             break;
 
         case HitKind::Expander:
@@ -961,10 +1211,15 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
         break;
     }
 
-    if (!keepEditing && m_editingName) {
+    if (!keepEditing && m_editingName)
         m_editingName = false;
+    if (!keepSearching && m_searching)
+        m_searching = false;
+
+    // Capture belongs to whichever field still has the caret; releasing it while
+    // the other one is live would let keystrokes fall through to keybinds.
+    if (!m_editingName && !m_searching && !m_bindingModule)
         input::InputManager::get().setCapture(false);
-    }
 }
 
 void ClickGui::applySettingClick(Setting& setting, Module& module, const Rect& row, const Vec2& cursor,
@@ -1015,6 +1270,45 @@ void ClickGui::onKey(KeyEvent& event) {
     if (!m_open || !event.down)
         return;
 
+    if (m_searching) {
+        event.cancel();
+
+        switch (event.key) {
+        case VK_ESCAPE:
+            // First Escape drops the query, second closes the menu. Leaving the
+            // filter behind after leaving the field would hide the categories
+            // with no obvious way back.
+            m_searching = false;
+            m_search.clear();
+            m_moduleScroll.reset();
+            input::InputManager::get().setCapture(false);
+            return;
+
+        case VK_RETURN:
+            m_searching = false;
+            input::InputManager::get().setCapture(false);
+            return;
+
+        case VK_BACK:
+            if (!m_search.empty()) {
+                m_search.pop_back();
+                m_moduleScroll.reset();
+            }
+            return;
+
+        default:
+            break;
+        }
+
+        if (m_search.size() < 24) {
+            if (const char c = input::InputManager::characterFor(event.key)) {
+                m_search.push_back(c);
+                m_moduleScroll.reset();
+            }
+        }
+        return;
+    }
+
     if (m_editingName) {
         event.cancel();
 
@@ -1063,6 +1357,31 @@ void ClickGui::onKey(KeyEvent& event) {
         input::InputManager::get().setCapture(false);
         event.cancel();
         return;
+    }
+
+    // Keyboard scrolling, for the case the wheel hook could not attach.
+    ScrollState& scroll = activeScroll();
+    const float page = std::max(1.0f, DrawUtils::screenSize().y * 0.45f);
+
+    switch (event.key) {
+    case VK_PRIOR:
+        scroll.nudge(-page);
+        event.cancel();
+        return;
+    case VK_NEXT:
+        scroll.nudge(page);
+        event.cancel();
+        return;
+    case VK_HOME:
+        scroll.position.set(0.0f);
+        event.cancel();
+        return;
+    case VK_END:
+        // Deliberately not bound: End unloads the client, and stealing it here
+        // would leave no way out if the menu got stuck open.
+        break;
+    default:
+        break;
     }
 
     if (event.key == VK_ESCAPE) {

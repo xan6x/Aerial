@@ -107,6 +107,11 @@ struct MouseEvent : Event {
     Button button = Button::Left;
     bool down = false;
     Vec2 position;
+
+    // Wheel notches since the last poll, positive upwards. Only meaningful for
+    // ScrollUp/ScrollDown; kept as a float because precision wheels report
+    // fractions of a detent and a list should follow them smoothly.
+    float wheel = 0.0f;
 };
 
 } // namespace aerial

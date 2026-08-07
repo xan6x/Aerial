@@ -9,6 +9,7 @@
 
 #include <atomic>
 
+#include "Render/Images.h"
 #include "Utils/Guard.h"
 #include "Utils/Hook.h"
 #include "Utils/Logger.h"
@@ -621,6 +622,11 @@ void D2DOverlay::composite(IDXGISwapChain* swapChain) {
 
 void D2DOverlay::releaseTarget() {
     m_ready = false;
+
+    // The decoded bitmaps belong to the context about to go away. The cache was
+    // documented as being dropped here but never actually was, so after a resize
+    // the artwork was being drawn from a dead device.
+    images::releaseAll();
 
     if (m_context)
         m_context->SetTarget(nullptr);

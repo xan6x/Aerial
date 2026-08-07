@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -52,9 +53,27 @@ private:
     // area and clipped by the window's rounded corners.
     void renderCharacter(const Layout& layout, float amount);
 
+    // A scrolled list's position. The offset is animated rather than snapped so
+    // a detent glides instead of jumping a row at a time.
+    struct ScrollState {
+        Animated position{0.0f};
+        float max = 0.0f;
+
+        void nudge(float delta) {
+            position.set(std::clamp(position.target() + delta, 0.0f, max));
+        }
+        void reset() { position.set(0.0f); }
+    };
+
     void renderChrome(const Layout& layout, float amount);
+    void renderSearch(const Rect& field, float scale, float amount);
     void renderRail(const Layout& layout, float amount);
     void renderCards(const Layout& layout, float amount);
+
+    // Thumb on the right edge of `view`. Drawn only when there is something to
+    // scroll, so a short list keeps its full width.
+    void renderScrollbar(const Rect& view, const ScrollState& scroll, float contentHeight,
+                         float scale, float amount);
     float renderCard(Module& module, const Rect& card, float scale, int index);
     float renderSetting(Setting& setting, Module& module, const Rect& row, float scale);
     void renderCursor(float scale);
@@ -86,6 +105,8 @@ private:
         ConfigDelete,
         ConfigNameField,
         ConfigCreate,
+        SearchField,
+        SearchClear,
     };
 
     struct Hit {
@@ -108,6 +129,18 @@ private:
 
     bool m_editingName = false;
     std::string m_nameBuffer;
+
+    // Search runs across every category, not just the selected one - the whole
+    // point is to reach a module without knowing where it was filed.
+    bool m_searching = false;
+    std::string m_search;
+
+    ScrollState m_moduleScroll;
+    ScrollState m_configScroll;
+
+    // The list currently under the cursor, so the wheel scrolls what is being
+    // pointed at rather than whatever was last drawn.
+    ScrollState& activeScroll();
 
     Setting* m_draggingSlider = nullptr;
     Rect m_draggingSliderRect;

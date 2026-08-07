@@ -31,12 +31,28 @@ void setOptionScale(uint32_t optionId, float multiplier);
 // slider in the game's settings then names the id that slider writes.
 void setOptionLogging(bool enabled);
 
+// ── Brightness ───────────────────────────────────────────────────────────────
+// Replaces the gamma the game reads from its options.
+void setGammaOverride(bool enabled, float gamma);
+
+// ── Field of view ────────────────────────────────────────────────────────────
+// Scales the computed field of view. The smoothing that makes it feel like
+// Java's belongs to the module - the hook only multiplies.
+void setFovScale(bool enabled, float scale);
+
 // ── Item physics ─────────────────────────────────────────────────────────────
-// Spins dropped items instead of leaving them as camera-facing sprites.
-//   spin  - degrees per second
-//   tilt  - degrees to lay the item away from upright
-//   lift  - world-space height offset
-void setItemPhysics(bool enabled, float spin, float tilt, float lift);
+// Dropped items spin while they fall and settle when they land, instead of
+// staying camera-facing sprites. Which item is which comes from hooking
+// ItemRenderer::render for the actor pointer; the orientation itself is applied
+// in Matrix::translate.
+//   spin     - degrees per second while airborne
+//   lift     - world-space height offset, non-block items only
+//   pivot    - shift along the item's own axis after rotation, 0 for none
+//   smooth   - ease into the resting angle rather than snapping to it
+//   preserve - keep whatever angle the item landed at
+//   flat     - never animate; draw every item resting, from the moment it drops
+void setItemPhysics(bool enabled, float spin, float lift, float pivot, bool smooth, bool preserve,
+                    bool flat);
 
 // ── Fog ──────────────────────────────────────────────────────────────────────
 // Replaces the fog colour the game computed for this frame. Only the RGB
@@ -47,6 +63,14 @@ void setFogColour(bool enabled, float red, float green, float blue);
 // Returns false if any critical hook could not be created; non-critical hooks
 // are logged and skipped.
 bool installAll();
+
+// ── Teardown ─────────────────────────────────────────────────────────────────
+// Closing the menu hands the cursor back through ClientInstance::grabMouse, and
+// that has to happen on the thread that owns the game's state, not on the one
+// that noticed the eject key. This asks MinecraftGame::update to do it and
+// blocks for up to `timeoutMs`; false means the game never came round, in which
+// case the caller should carry on regardless rather than hang.
+bool requestTeardown(unsigned timeoutMs);
 
 void removeAll();
 

@@ -49,6 +49,37 @@ DWORD findProcess(const wchar_t* name) {
     return pid;
 }
 
+// True while the client is still mapped into the target.
+//
+// This matters because LoadLibraryW on an already-loaded module does not call
+// DllMain again - it just bumps the reference count and returns. The injection
+// "succeeds", nothing starts, and the client is left half-alive with an extra
+// reference that stops the next eject from unmapping it. Ejecting also takes
+// most of a second to unwind, so injecting straight after ejecting lands in
+// exactly that window.
+bool alreadyLoaded(DWORD pid, const std::wstring& dllName) {
+    const HANDLE snapshot =
+        CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+    if (snapshot == INVALID_HANDLE_VALUE)
+        return false;
+
+    MODULEENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    bool found = false;
+
+    if (Module32FirstW(snapshot, &entry)) {
+        do {
+            if (_wcsicmp(entry.szModule, dllName.c_str()) == 0) {
+                found = true;
+                break;
+            }
+        } while (Module32NextW(snapshot, &entry));
+    }
+
+    CloseHandle(snapshot);
+    return found;
+}
+
 // Adds read+execute for S-1-15-2-1 (ALL APPLICATION PACKAGES) to the DLL.
 bool grantAppContainerAccess(const std::wstring& path) {
     PSID sid = nullptr;
@@ -199,6 +230,22 @@ int wmain(int argc, wchar_t** argv) {
         return 1;
     }
     std::wcout << L"[*] target pid: " << pid << L"\n";
+
+    // Give a still-unloading instance a moment to finish before deciding.
+    const std::wstring dllName = dll.filename().wstring();
+    for (int waited = 0; waited < 3000 && alreadyLoaded(pid, dllName); waited += 250) {
+        if (waited == 0)
+            std::wcout << L"[*] " << dllName << L" is still loaded, waiting for it to unload...\n";
+        Sleep(250);
+    }
+
+    if (alreadyLoaded(pid, dllName)) {
+        std::wcerr << L"[-] " << dllName
+                   << L" is still mapped into the game. Injecting now would bump its reference "
+                      L"count without starting anything and leave it stuck. Press End in game, "
+                      L"wait a second, then try again.\n";
+        return 1;
+    }
 
     if (!inject(pid, dll.wstring())) {
         std::wcerr << L"[-] injection failed\n";
