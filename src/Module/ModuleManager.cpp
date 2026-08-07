@@ -22,6 +22,7 @@ void ModuleManager::registerAll() {
     add<modules::JavaFov>();
     add<modules::NoDynamicFov>();
     add<modules::NoHurtCam>();
+    add<modules::SelfNameTag>();
     add<modules::Skybox>();
 
     add<modules::ArrayList>();

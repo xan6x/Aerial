@@ -142,6 +142,9 @@ inline constexpr uintptr_t Options_getFloat            = 0x495600;
 
 inline constexpr uintptr_t Options_getGamma            = 0x4885C0;
 
+// ignores its 'this'; reads option 2 out of a global map. 0 first person, 1 third back, 2 third front
+inline constexpr uintptr_t Options_getPlayerViewPerspective = 0x488420;
+
 inline constexpr uintptr_t LevelRendererPlayer_getFov  = 0x5B6830;
 
 inline constexpr uintptr_t Matrix_translate            = 0x15D390;
@@ -176,6 +179,8 @@ inline constexpr float kSkyCubeScale = -2000.0f;
 inline constexpr float kPackCubeScale = 800.0f;
 
 inline constexpr uintptr_t LevelRendererCamera_setupFog = 0x5AFE00;
+
+inline constexpr uintptr_t EntityRenderer_renderText    = 0x561E70;  // (renderer, entity, std::string*, f partialTicks)
 
 inline constexpr uintptr_t LoopbackPacketSender_send    = 0x77ABC0;
 inline constexpr uintptr_t NetworkHandler_update        = 0x77B710;

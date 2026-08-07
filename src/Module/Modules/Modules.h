@@ -6,6 +6,7 @@
 #include "Module/Modules/JavaFov.h"
 #include "Module/Modules/NoDynamicFov.h"
 #include "Module/Modules/NoHurtCam.h"
+#include "Module/Modules/SelfNameTag.h"
 #include "Module/Modules/Skybox.h"
 
 #include "Module/Modules/ArrayList.h"
