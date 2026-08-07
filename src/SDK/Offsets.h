@@ -181,6 +181,12 @@ inline constexpr float kPackCubeScale = 800.0f;
 inline constexpr uintptr_t LevelRendererCamera_setupFog = 0x5AFE00;
 
 inline constexpr uintptr_t EntityRenderer_renderText    = 0x561E70;  // (renderer, entity, std::string*, f partialTicks)
+inline constexpr uintptr_t EntityRenderer_getOffset     = 0x562050;  // (renderer, Vec3* out) -> out; the world render origin
+
+inline constexpr uintptr_t BaseEntityRenderer_textBillboardReturn = 0x5C8EC8;
+
+inline constexpr uintptr_t g_renderOrigin = 0x19436E8;  // three floats, what _getOffset hands back
+inline constexpr uintptr_t g_cameraPos    = 0x19436F8;  // three floats, published from LevelRendererCamera+0x57C
 
 inline constexpr uintptr_t LoopbackPacketSender_send    = 0x77ABC0;
 inline constexpr uintptr_t NetworkHandler_update        = 0x77B710;
