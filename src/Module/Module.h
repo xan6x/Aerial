@@ -65,6 +65,11 @@ public:
     // ClickGUI itself) override this.
     virtual bool persistEnabled() const { return true; }
 
+    // Whether the array list shows this module. Only the HUD elements that draw
+    // the list - and the menu itself - opt out. Filtering by category instead
+    // hid every other Render module along with them.
+    virtual bool listed() const { return true; }
+
     const std::vector<std::unique_ptr<Setting>>& settings() const { return m_settings; }
     Setting* findSetting(std::string_view name) const;
 

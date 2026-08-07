@@ -16,18 +16,30 @@ void ModuleManager::registerAll() {
     if (!m_modules.empty())
         return;
 
+    // Combat
+    add<modules::ItemDelayFix>();
+
     // Movement
+    add<modules::AutoSprint>();
     add<modules::InventoryMove>();
 
+    // Player
+    add<modules::NoCamReset>();
+    add<modules::SensMultiplier>();
+
     // Render
-    add<modules::Watermark>();
     add<modules::ArrayList>();
+    add<modules::FogColor>();
+    add<modules::ItemPhysics>();
+    add<modules::NoDynamicFov>();
+    add<modules::NoHurtCam>();
     add<modules::Notifications>();
+    add<modules::NoVSync>();
+    add<modules::Watermark>();
 
     // Misc
     add<modules::ClickGuiModule>();
     add<modules::Direct2D>();
-    add<modules::VSync>();
     add<modules::PacketLogger>();
 
     std::sort(m_modules.begin(), m_modules.end(),

@@ -1,168 +1,34 @@
 #pragma once
 
-#include <deque>
-#include <string>
-#include <vector>
-
-#include "GUI/Theme.h"
-#include "Module/Module.h"
-
-// Every module Aerial ships. Adding one is three steps:
-//   1. declare it here,
-//   2. implement it in a .cpp under Module/Modules/,
+// Every module Aerial ships, one header and one source file each.
+//
+// Adding a module is three steps:
+//   1. create <Name>.h and <Name>.cpp beside these,
+//   2. include the header below,
 //   3. add<YourModule>() in ModuleManager::registerAll().
 
-namespace aerial {
+// Combat
+#include "Module/Modules/ItemDelayFix.h"
 
-struct KeyEvent;
-struct ModuleToggleEvent;
-struct MouseEvent;
-struct PacketSendEvent;
-struct Render2DEvent;
-struct TickEvent;
+// Movement
+#include "Module/Modules/AutoSprint.h"
+#include "Module/Modules/InventoryMove.h"
 
-namespace modules {
+// Player
+#include "Module/Modules/NoCamReset.h"
+#include "Module/Modules/SensMultiplier.h"
 
-// ── Movement ─────────────────────────────────────────────────────────────────
-// Keeps walking and sprinting working while a game screen - the inventory, for
-// instance - is open.
-class InventoryMove final : public Module {
-public:
-    InventoryMove();
+// Render
+#include "Module/Modules/ArrayList.h"
+#include "Module/Modules/FogColor.h"
+#include "Module/Modules/ItemPhysics.h"
+#include "Module/Modules/NoDynamicFov.h"
+#include "Module/Modules/NoHurtCam.h"
+#include "Module/Modules/NoVSync.h"
+#include "Module/Modules/Notifications.h"
+#include "Module/Modules/Watermark.h"
 
-private:
-    void onTick(TickEvent& event);
-
-    FloatSetting* m_speed;
-};
-
-// ── Render ───────────────────────────────────────────────────────────────────
-class Watermark final : public Module {
-public:
-    Watermark();
-
-private:
-    void onRender(Render2DEvent& event);
-
-    EnumSetting* m_style;
-    BoolSetting* m_showFps;
-    BoolSetting* m_rainbow;
-    ColourSetting* m_colour;
-};
-
-class ArrayList final : public Module {
-public:
-    ArrayList();
-
-private:
-    void onRender(Render2DEvent& event);
-
-    EnumSetting* m_sort;
-    BoolSetting* m_rainbow;
-    BoolSetting* m_background;
-};
-
-// Toast popups with a soft two-note chime. Other code posts through the static
-// push(), so anything in the client can raise a notification:
-//
-//     modules::Notifications::push("Config saved", Notifications::Level::Success);
-class Notifications final : public Module {
-public:
-    enum class Level { Info, Success, Warning, Error };
-
-    Notifications();
-
-    static void push(std::string text, Level level = Level::Info);
-
-private:
-    struct Toast {
-        std::string text;
-        Level level = Level::Info;
-        float born = 0.0f;
-        gui::Animated slide{0.0f};
-        bool expiring = false;
-    };
-
-    void onRender(Render2DEvent& event);
-    void onModuleToggle(ModuleToggleEvent& event);
-
-    void add(std::string text, Level level);
-    void playChime(bool rising);
-    Colour colourFor(Level level) const;
-
-    std::deque<Toast> m_toasts;
-
-    BoolSetting* m_sound;
-    FloatSetting* m_volume;
-    FloatSetting* m_duration;
-    IntSetting* m_maxVisible;
-    EnumSetting* m_corner;
-    BoolSetting* m_moduleToggles;
-
-    std::vector<uint8_t> m_chimeUp;
-    std::vector<uint8_t> m_chimeDown;
-    float m_builtVolume = -1.0f;
-};
-
-// ── Misc ─────────────────────────────────────────────────────────────────────
-class ClickGuiModule final : public Module {
-public:
-    ClickGuiModule();
-    bool persistEnabled() const override { return false; }
-
-protected:
-    void onEnable() override;
-    void onDisable() override;
-
-private:
-    void onRender(Render2DEvent& event);
-    void onMouse(MouseEvent& event);
-    void onKey(KeyEvent& event);
-
-    EnumSetting* m_character;
-    FloatSetting* m_characterOpacity;
-};
-
-// Enabled means vanilla behaviour (vsync on). Turning it off presents without
-// waiting for the refresh, which uncaps the frame rate.
-class VSync final : public Module {
-public:
-    VSync();
-    std::string suffix() const override;
-
-protected:
-    void onEnable() override;
-    void onDisable() override;
-
-private:
-    void onRender(Render2DEvent& event);
-    void apply(bool enabled);
-
-    bool m_warned = false;
-};
-
-// Switches the interface between the Direct2D overlay and the game's own
-// renderer at runtime. Kept as a module so a rendering problem can be pinned on
-// the overlay in one click instead of a rebuild.
-class Direct2D final : public Module {
-public:
-    Direct2D();
-    std::string suffix() const override;
-
-protected:
-    void onEnable() override;
-    void onDisable() override;
-};
-
-class PacketLogger final : public Module {
-public:
-    PacketLogger();
-
-private:
-    void onPacket(PacketSendEvent& event);
-
-    BoolSetting* m_toChat;
-};
-
-} // namespace modules
-} // namespace aerial
+// Misc
+#include "Module/Modules/ClickGuiModule.h"
+#include "Module/Modules/Direct2D.h"
+#include "Module/Modules/PacketLogger.h"

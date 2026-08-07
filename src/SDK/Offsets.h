@@ -164,6 +164,30 @@ inline constexpr uintptr_t ScreenView_handlePointerLocation = 0x3EDE50;
 // site (lea rdx, [rbp-0x10] in ScreenView::ScreenView), never in the prologue.
 inline constexpr uintptr_t ScreenView_processEvents    = 0x3F2470;
 
+// Options::getFloat(options, id) - an FNV-1a lookup that returns the float at
+// [entry+0x14]. It serves every float option, not just sensitivity, which is
+// why scaling its result unconditionally (as zutil's tail patch does) would
+// touch unrelated settings. Only rcx and edx are inputs; r8/r9 are overwritten
+// before use, so the two-argument signature is the complete one.
+inline constexpr uintptr_t Options_getFloat            = 0x495600;
+
+// Matrix::translate(matrix, x, y, z) - writes the 64-byte result back through
+// rcx. Verified: it stores xmm1/xmm2/xmm3 into a local vector and copies 0x40
+// bytes into the matrix it was handed.
+inline constexpr uintptr_t Matrix_translate            = 0x15D390;
+
+// ItemRenderer::render is virtual and has no direct call site, so its argument
+// count cannot be read anywhere. It does not need to be: the one thing that
+// identifies a dropped item's transform is the return address of the translate
+// it performs, which is the instruction after the call at 0x56FE7E.
+inline constexpr uintptr_t ItemRenderer_render         = 0x56FCC0;
+inline constexpr uintptr_t ItemRenderer_translateReturn = 0x56FE83;
+
+// LevelRendererCamera::setupFog computes the fog colour from the biome's RGBA
+// at [biome+0xD0], scales it by brightness and stores it to [this+0x3C8].
+// It reads rcx, rdx and r8; its one call site sets no stack arguments.
+inline constexpr uintptr_t LevelRendererCamera_setupFog = 0x5AFE00;
+
 // Networking
 inline constexpr uintptr_t LoopbackPacketSender_send    = 0x77ABC0;
 inline constexpr uintptr_t NetworkHandler_update        = 0x77B710;
@@ -383,6 +407,12 @@ inline constexpr ptrdiff_t state     = 0x65;   // dword
 inline constexpr ptrdiff_t amountX   = 0x6C;   // float
 inline constexpr ptrdiff_t amountY   = 0x70;   // float
 } // namespace moveInput
+
+namespace levelRendererCamera {
+// Fog colour as four floats. setupFog writes it with a single movups, and both
+// of its branches target the same field.
+inline constexpr ptrdiff_t fogColour = 0x3C8;
+} // namespace levelRendererCamera
 
 namespace screen {
 // Screen+0x30 is the ClientInstance every Screen::render implementation walks.

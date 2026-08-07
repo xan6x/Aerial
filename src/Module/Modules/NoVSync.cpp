@@ -1,4 +1,4 @@
-#include "Module/Modules/Modules.h"
+#include "Module/Modules/NoVSync.h"
 
 #include "Event/Events.h"
 #include "SDK/Offsets.h"
@@ -25,40 +25,37 @@ uint8_t* vsyncFlag() {
 
 } // namespace
 
-VSync::VSync() : Module("VSync", "Waits for the display refresh; turn off to uncap the frame rate",
-                        Category::Misc) {
-    // Enforced every frame regardless of state: switching the module off has to
-    // keep the flag clear, not just clear it once.
-    listenAlways<Render2DEvent>(&VSync::onRender);
-
-    setEnabled(true);
+NoVSync::NoVSync()
+    : Module("NoVSync", "Uncaps the frame rate by not waiting for the display refresh",
+             Category::Render) {
+    // Enforced every frame: the game rewrites the flag from its own settings,
+    // so setting it once on enable would not hold.
+    listen<Render2DEvent>(&NoVSync::onRender);
 }
 
-std::string VSync::suffix() const { return enabled() ? "" : "uncapped"; }
-
-void VSync::onEnable() { apply(true); }
-
-void VSync::onDisable() { apply(false); }
-
-void VSync::onRender(Render2DEvent& event) {
+void NoVSync::onRender(Render2DEvent& event) {
     (void)event;
-    apply(enabled());
-}
 
-void VSync::apply(bool enabled) {
     uint8_t* flag = vsyncFlag();
     if (!flag) {
         if (!m_warned) {
             m_warned = true;
-            LOG_WARN("VSync", "present config not reachable yet - flag {:#x} still null",
-                     offsets::data::presentConfig);
+            LOG_WARN("NoVSync", "present config not reachable yet");
         }
         return;
     }
 
-    const uint8_t wanted = enabled ? 1 : 0;
-    if (*flag != wanted)
-        *flag = wanted;
+    // Remember what the game wanted the first time, so switching this off
+    // restores its setting instead of guessing.
+    if (*flag != 0) {
+        m_hadVsync = true;
+        *flag = 0;
+    }
+}
+
+void NoVSync::onDisable() {
+    if (uint8_t* flag = vsyncFlag(); flag && m_hadVsync)
+        *flag = 1;
 }
 
 } // namespace aerial::modules

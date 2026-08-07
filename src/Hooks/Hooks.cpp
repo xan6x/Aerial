@@ -1,7 +1,14 @@
 #include "Hooks/Hooks.h"
 
+#include <intrin.h>
+
 #include <atomic>
+#include <cmath>
 #include <cstdint>
+#include <mutex>
+#include <unordered_map>
+
+#include "GUI/Theme.h"
 
 #include "Event/Events.h"
 #include "GUI/ClickGui.h"
@@ -66,6 +73,29 @@ void clearMovementState(void* handler) {
 Detour<void(__fastcall*)(void*, void*, void*)> g_attack;
 Detour<void(__fastcall*)(void*, void*)> g_packetSend;
 Detour<void(__fastcall*)(void*)> g_leaveGame;
+Detour<float(__fastcall*)(void*, uint32_t)> g_getFloatOption;
+
+// setupFog reads rcx, rdx and r8, and its only call site sets no stack
+// arguments. The return is declared and forwarded rather than dropped: if the
+// function does return something, handing back the trampoline's own value keeps
+// the caller seeing exactly what it would have.
+Detour<uintptr_t(__fastcall*)(void*, void*, void*, void*)> g_setupFog;
+
+std::atomic<uint32_t> g_scaledOptionId{0};
+std::atomic<float> g_optionMultiplier{1.0f};
+std::atomic<bool> g_optionLogging{false};
+
+Detour<void(__fastcall*)(void*, float, float, float)> g_matrixTranslate;
+
+std::atomic<bool> g_itemPhysics{false};
+std::atomic<float> g_itemSpin{120.0f};
+std::atomic<float> g_itemTilt{90.0f};
+std::atomic<float> g_itemLift{0.3f};
+
+std::atomic<bool> g_fogEnabled{false};
+std::atomic<float> g_fogRed{1.0f};
+std::atomic<float> g_fogGreen{1.0f};
+std::atomic<float> g_fogBlue{1.0f};
 
 std::atomic<uint64_t> g_renderFrames{0};
 std::atomic<uint64_t> g_playerTicks{0};
@@ -259,6 +289,134 @@ void __fastcall onTickBuildAction(void* self) {
     g_tickBuildAction.call(self);
 }
 
+// ── Options::getFloat ────────────────────────────────────────────────────────
+// Every float setting comes through here, keyed by a 32-bit option id, so the
+// multiplier is applied to exactly one id rather than to whatever happens to be
+// read. The logging path exists to find that id: it names each option once and
+// reports later changes, so moving a slider in the game's settings identifies
+// the option behind it.
+float __fastcall onGetFloatOption(void* options, uint32_t id) {
+    const float value = g_getFloatOption.call(options, id);
+
+    if (g_optionLogging.load(std::memory_order_relaxed)) {
+        static std::mutex mutex;
+        static std::unordered_map<uint32_t, float> seen;
+
+        // A dragged slider produces hundreds of changes a second, and more than
+        // one options object reads the same id, so the two alternate. Cap the
+        // output: the point is to name an id, not to trace every read.
+        static int reported = 0;
+        constexpr int kMaxReports = 200;
+
+        std::lock_guard lock(mutex);
+        const auto it = seen.find(id);
+        if (it == seen.end()) {
+            if (seen.size() < 128) {
+                seen.emplace(id, value);
+                LOG_INFO("Options", "id {:#010x} = {:.4f}", id, value);
+            }
+        } else if (it->second != value) {
+            if (reported < kMaxReports) {
+                ++reported;
+                LOG_INFO("Options", "id {:#010x} changed {:.4f} -> {:.4f}", id, it->second, value);
+                if (reported == kMaxReports)
+                    LOG_INFO("Options", "further changes will not be reported");
+            }
+            it->second = value;
+        }
+    }
+
+    const uint32_t scaled = g_scaledOptionId.load(std::memory_order_relaxed);
+    if (scaled != 0 && id == scaled)
+        return value * g_optionMultiplier.load(std::memory_order_relaxed);
+
+    return value;
+}
+
+// ── Matrix::translate ────────────────────────────────────────────────────────
+// Dropped items are camera-facing sprites in this build: ItemRenderer::render
+// contains no rotation at all, only this one translate, and the quad corners
+// that follow are constants. So the orientation has to be introduced here, into
+// the matrix the sprite is then drawn with.
+//
+// The renderer itself is virtual and has no call site, so its argument count is
+// unknowable and it cannot be hooked safely. It does not need to be: the return
+// address of this translate identifies the caller exactly, and translate's own
+// signature was read off its body.
+//
+// The matrix is 16 floats in column-major order, the convention the game's own
+// maths uses, so a rotation is applied by combining columns.
+void rotateColumns(float* m, int columnA, int columnB, float degrees) {
+    const float radians = degrees * kDeg2Rad;
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+
+    float* a = m + columnA * 4;
+    float* b = m + columnB * 4;
+
+    for (int i = 0; i < 4; ++i) {
+        const float av = a[i];
+        const float bv = b[i];
+        a[i] = av * c + bv * s;
+        b[i] = -av * s + bv * c;
+    }
+}
+
+void __fastcall onMatrixTranslate(void* matrix, float x, float y, float z) {
+    if (!g_itemPhysics.load(std::memory_order_relaxed)) {
+        g_matrixTranslate.call(matrix, x, y, z);
+        return;
+    }
+
+    // Everything in the world goes through this function; only the item
+    // renderer's own call is ours to change.
+    const bool isItem = reinterpret_cast<uintptr_t>(_ReturnAddress()) ==
+                        memory::rva(offsets::func::ItemRenderer_translateReturn);
+
+    g_matrixTranslate.call(matrix, x, y + (isItem ? g_itemLift.load(std::memory_order_relaxed) : 0.0f),
+                           z);
+    if (!isItem || !memory::isReadable(matrix, 64))
+        return;
+
+    auto* m = static_cast<float*>(matrix);
+
+    // Items are desynchronised by their position rather than by per-item state:
+    // there is no identity to key a map on here, and a resting item's position
+    // is stable, which is exactly when a fixed phase matters.
+    const float phase = std::floor(x) * 37.0f + std::floor(z) * 17.0f;
+    const float spin = std::fmod(gui::clockSeconds() * g_itemSpin.load(std::memory_order_relaxed) +
+                                     phase,
+                                 360.0f);
+
+    rotateColumns(m, 0, 2, spin);                                       // yaw
+    rotateColumns(m, 1, 2, g_itemTilt.load(std::memory_order_relaxed)); // lay it over
+}
+
+// ── LevelRendererCamera::setupFog ────────────────────────────────────────────
+// The colour is overwritten after the fact rather than by patching the maths:
+// setupFog picks between several branches - underwater, lava, the biome table -
+// and every one of them lands on the same field, so writing it once here covers
+// all of them.
+uintptr_t __fastcall onSetupFog(void* self, void* a2, void* a3, void* a4) {
+    const uintptr_t result = g_setupFog.call(self, a2, a3, a4);
+
+    if (!g_fogEnabled.load(std::memory_order_relaxed))
+        return result;
+
+    constexpr ptrdiff_t kOffset = offsets::field::levelRendererCamera::fogColour;
+    if (!memory::isReadable(self, kOffset + sizeof(float) * 4))
+        return result;
+
+    auto* colour = reinterpret_cast<float*>(static_cast<uint8_t*>(self) + kOffset);
+    colour[0] = g_fogRed.load(std::memory_order_relaxed);
+    colour[1] = g_fogGreen.load(std::memory_order_relaxed);
+    colour[2] = g_fogBlue.load(std::memory_order_relaxed);
+    // The fourth float is left as the game set it - it is not an opacity the
+    // module has any business guessing at.
+
+    return result;
+}
+
 // ── GameMode::attack ─────────────────────────────────────────────────────────
 void __fastcall onAttack(void* self, void* player, void* target) {
     Context::get().gameMode = static_cast<GameMode*>(self);
@@ -319,6 +477,29 @@ uint64_t overlayCount() { return g_overlays.load(std::memory_order_relaxed); }
 
 void* moveInputHandler() { return g_moveInputHandler; }
 
+void setOptionScale(uint32_t optionId, float multiplier) {
+    g_scaledOptionId.store(optionId, std::memory_order_relaxed);
+    g_optionMultiplier.store(multiplier, std::memory_order_relaxed);
+}
+
+void setOptionLogging(bool enabled) {
+    g_optionLogging.store(enabled, std::memory_order_relaxed);
+}
+
+void setItemPhysics(bool enabled, float spin, float tilt, float lift) {
+    g_itemSpin.store(spin, std::memory_order_relaxed);
+    g_itemTilt.store(tilt, std::memory_order_relaxed);
+    g_itemLift.store(lift, std::memory_order_relaxed);
+    g_itemPhysics.store(enabled, std::memory_order_relaxed);
+}
+
+void setFogColour(bool enabled, float red, float green, float blue) {
+    g_fogRed.store(red, std::memory_order_relaxed);
+    g_fogGreen.store(green, std::memory_order_relaxed);
+    g_fogBlue.store(blue, std::memory_order_relaxed);
+    g_fogEnabled.store(enabled, std::memory_order_relaxed);
+}
+
 bool installAll() {
     if (!HookManager::get().init())
         return false;
@@ -353,6 +534,12 @@ bool installAll() {
                            &onMoveInputTick);
     g_processEvents.attach("ScreenView::_processEvents",
                            memory::rva(func::ScreenView_processEvents), &onProcessEvents);
+    g_getFloatOption.attach("Options::getFloat", memory::rva(func::Options_getFloat),
+                            &onGetFloatOption);
+    g_setupFog.attach("LevelRendererCamera::setupFog",
+                      memory::rva(func::LevelRendererCamera_setupFog), &onSetupFog);
+    g_matrixTranslate.attach("Matrix::translate", memory::rva(func::Matrix_translate),
+                             &onMatrixTranslate);
 
     // Preferred draw path. If DXGI cannot be reached the client keeps using the
     // game renderer through onUpdateGraphics.
