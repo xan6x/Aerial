@@ -92,14 +92,13 @@ void Aerial::startup(void* moduleHandle) {
     }
 
     ModuleManager::get().registerAll();
-    gui::ClickGui::get().init();
 
     if (!hooks::installAll()) {
         LOG_ERROR("Aerial", "hook installation failed");
         return;
     }
 
-    Config::get().load();
+    Config::get().loadActive();
 
     m_running = true;
     LOG_INFO("Aerial", "ready - press Y for the menu, End to unload");

@@ -2,74 +2,100 @@
 
 #include <string>
 
-#include "SDK/Types.h"
 #include "Utils/Math.h"
 
 namespace aerial::render {
 
-// 2D drawing in the game's scaled UI space, on top of MC's own renderer:
-//   * rectangles go through ScreenRenderer::fill (verified signature)
-//   * text goes through Font::drawCached, the same call the HUD uses
+// One drawing API, two backends.
 //
-// Only valid from inside a Render2DEvent handler — the tessellator state the
-// game sets up for the HUD pass is what makes these calls safe.
+//   * Direct2D, drawn onto the swap chain in Present. Rounded corners,
+//     antialiasing, gradients, drop shadows, frosted-glass blur and real
+//     DirectWrite typography.
+//   * The game's own ScreenRenderer, used only when Direct2D cannot attach.
+//     It can fill sharp untextured quads and blit a fixed-size bitmap font, so
+//     radius, blur and font size are silently ignored there. Everything still
+//     draws - it just looks like a 2017 client.
+//
+// Coordinates are in design units: the layout is authored as if the screen were
+// 1000 units tall, and uiScale() converts. That keeps one set of layout
+// constants working across resolutions and across both backends.
 class DrawUtils {
 public:
-    // Called by the render hook before dispatching Render2DEvent.
+    static bool usingD2D();
+
+    // Called once per frame before anything is drawn.
     static void beginFrame();
 
-    // Size of the UI viewport in GUI units (not pixels).
+    // Drawable area, in the backend's own units.
     static Vec2 screenSize();
 
-    // The GUI scale factor Aerial derives the viewport from. Override it if the
-    // auto-detected value is wrong for a given window/scale combination; 0
-    // restores auto-detection.
-    static void setScaleOverride(float scale);
-    static float scale();
+    // Multiply layout constants by this. 1.0 means "authored size".
+    static float uiScale();
 
     // --- Shapes -------------------------------------------------------------
-    static void fill(const Rect& area, const Colour& colour);
-    static void outline(const Rect& area, const Colour& colour, float thickness = 1.0f);
+    static void fill(const Rect& area, const Colour& colour, float radius = 0.0f);
+    static void outline(const Rect& area, const Colour& colour, float thickness = 1.0f,
+                        float radius = 0.0f);
+    static void gradient(const Rect& area, const Colour& from, const Colour& to, bool vertical = true,
+                         float radius = 0.0f);
 
-    // Vertical/horizontal two-stop gradient, drawn as `steps` strips.
-    static void gradientVertical(const Rect& area, const Colour& top, const Colour& bottom, int steps = 24);
-    static void gradientHorizontal(const Rect& area, const Colour& left, const Colour& right, int steps = 24);
+    // Soft drop shadow behind `area`. No-op on the fallback backend, which
+    // draws a flat dark rectangle instead.
+    static void shadow(const Rect& area, const Colour& colour, float blur, float radius,
+                       const Vec2& offset = {0.0f, 2.0f});
 
-    // Rectangle with rounded corners, approximated with horizontal strips.
-    static void roundedFill(const Rect& area, const Colour& colour, float radius, int segments = 6);
+    // Frosted glass: blurs whatever the game already drew behind `area`.
+    static void blurBehind(const Rect& area, float radius, float strength);
 
     // --- Text ---------------------------------------------------------------
+    enum class Weight { Regular, Medium, SemiBold, Bold };
+    enum class Align { Left, Centre, Right };
+
     static void text(const std::string& value, const Vec2& position, const Colour& colour,
-                     float scale = 1.0f, bool shadow = true);
-    static void textCentred(const std::string& value, const Vec2& centre, const Colour& colour,
-                            float scale = 1.0f, bool shadow = true);
-    static void textRight(const std::string& value, const Vec2& rightAnchor, const Colour& colour,
-                          float scale = 1.0f, bool shadow = true);
+                     float size = 14.0f, Weight weight = Weight::Regular, Align align = Align::Left);
 
-    static float textWidth(const std::string& value, float scale = 1.0f);
-    static float textHeight(float scale = 1.0f);
+    static float textWidth(const std::string& value, float size = 14.0f,
+                           Weight weight = Weight::Regular);
+    static float textHeight(float size = 14.0f);
 
-    // True when a font and renderer are available this frame.
-    static bool ready();
+    // Shortens `value` with a trailing ellipsis until it fits `maxWidth`.
+    // Clipping alone is not enough on the fallback backend, which has no
+    // scissor, and a hard cut mid-word reads as a bug rather than as elision.
+    static std::string fit(const std::string& value, float maxWidth, float size = 14.0f,
+                           Weight weight = Weight::Regular);
 
-    // --- Bring-up instrumentation -------------------------------------------
-    // Drawing rides on the game's own 2D pass, and the client has no way to see
-    // whether a call actually reached the screen. These probes draw a labelled
-    // bar from each candidate point in the frame; whichever bar is visible in
-    // game is the point Render2DEvent should be dispatched from.
-    enum class ProbeSite { BeforeGameRender = 0, AfterGameRender = 1, AfterScreenRender = 2 };
+    // --- Images -------------------------------------------------------------
+    // Draws an embedded PNG (see src/Assets/Resources.h) into `dest`. No-op on
+    // the fallback backend, which cannot sample textures.
+    static void image(int resourceId, const Rect& dest, float opacity = 1.0f);
 
-    static void probe(ProbeSite site);
-    static void setProbeEnabled(bool enabled);
-    static bool probeEnabled();
+    // Aspect ratio (width / height), 0 if the image is unavailable.
+    static float imageAspect(int resourceId);
 
+    // Filled polygon. Only the Direct2D backend can draw one; the fallback
+    // approximates it with the bounding box.
+    static void polygon(const Vec2* points, size_t count, const Colour& colour);
+
+    // --- Clipping -----------------------------------------------------------
+    // A non-zero radius clips to a rounded rectangle, which is what keeps
+    // artwork from poking out of the window's corners.
+    static void pushClip(const Rect& area, float radius = 0.0f);
+    static void popClip();
+
+    // --- Diagnostics --------------------------------------------------------
     struct Stats {
         uint32_t fills = 0;
-        uint32_t fillsSkipped = 0;   // ScreenRenderer::singleton() returned null
+        uint32_t fillsSkipped = 0;
         uint32_t texts = 0;
-        uint32_t textsSkipped = 0;   // no Font available
+        uint32_t textsSkipped = 0;
     };
     static Stats stats();
+    static const char* backendName();
+
+    // Overrides the GUI scale used by the fallback backend; 0 restores
+    // auto-detection.
+    static void setScaleOverride(float scale);
+    static float scale();
 };
 
 } // namespace aerial::render

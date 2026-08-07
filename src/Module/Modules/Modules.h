@@ -23,6 +23,19 @@ struct TickEvent;
 
 namespace modules {
 
+// ── Movement ─────────────────────────────────────────────────────────────────
+// Keeps walking and sprinting working while a game screen - the inventory, for
+// instance - is open.
+class InventoryMove final : public Module {
+public:
+    InventoryMove();
+
+private:
+    void onTick(TickEvent& event);
+
+    FloatSetting* m_speed;
+};
+
 // ── Render ───────────────────────────────────────────────────────────────────
 class Watermark final : public Module {
 public:
@@ -33,6 +46,7 @@ private:
 
     EnumSetting* m_style;
     BoolSetting* m_showFps;
+    BoolSetting* m_rainbow;
     ColourSetting* m_colour;
 };
 
@@ -104,6 +118,9 @@ private:
     void onRender(Render2DEvent& event);
     void onMouse(MouseEvent& event);
     void onKey(KeyEvent& event);
+
+    EnumSetting* m_character;
+    FloatSetting* m_characterOpacity;
 };
 
 // Enabled means vanilla behaviour (vsync on). Turning it off presents without
@@ -122,6 +139,19 @@ private:
     void apply(bool enabled);
 
     bool m_warned = false;
+};
+
+// Switches the interface between the Direct2D overlay and the game's own
+// renderer at runtime. Kept as a module so a rendering problem can be pinned on
+// the overlay in one click instead of a rebuild.
+class Direct2D final : public Module {
+public:
+    Direct2D();
+    std::string suffix() const override;
+
+protected:
+    void onEnable() override;
+    void onDisable() override;
 };
 
 class PacketLogger final : public Module {

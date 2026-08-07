@@ -16,9 +16,10 @@ namespace {
 
 using render::DrawUtils;
 
-constexpr float kToastHeight = 15.0f;
-constexpr float kToastGap = 2.0f;
-constexpr float kMargin = 4.0f;
+constexpr float kToastHeight = 34.0f;
+constexpr float kToastGap = 6.0f;
+constexpr float kMargin = 12.0f;
+constexpr float kToastTextSize = 13.0f;
 constexpr int kSampleRate = 44100;
 
 Notifications* g_instance = nullptr;
@@ -179,6 +180,12 @@ void Notifications::onRender(Render2DEvent& event) {
     while (!m_toasts.empty() && m_toasts.front().expiring && m_toasts.front().slide.value() < 0.01f)
         m_toasts.pop_front();
 
+    const float s = DrawUtils::uiScale();
+    const float height = kToastHeight * s;
+    const float margin = kMargin * s;
+    const float radius = 9.0f * s;
+    const float textSize = kToastTextSize * s;
+
     const int visible = std::min<int>(m_maxVisible->value, static_cast<int>(m_toasts.size()));
     const size_t firstIndex = m_toasts.size() - static_cast<size_t>(visible);
 
@@ -190,29 +197,39 @@ void Notifications::onRender(Render2DEvent& event) {
             continue;
 
         const Colour accent = colourFor(toast.level);
-        const float width = DrawUtils::textWidth(toast.text) + 18.0f;
+        const float width = DrawUtils::textWidth(toast.text, textSize, DrawUtils::Weight::Medium) +
+                            34.0f * s;
 
         // Slide in from the screen edge and fade with the same value.
-        const float hidden = (1.0f - slide) * (width + kMargin);
-        const float x = left ? kMargin - hidden : event.screenSize.x - kMargin - width + hidden;
-        const float y = top ? kMargin + offset : event.screenSize.y - kMargin - kToastHeight - offset;
+        const float hidden = (1.0f - slide) * (width + margin);
+        const float x = left ? margin - hidden : event.screenSize.x - margin - width + hidden;
+        const float y = top ? margin + offset : event.screenSize.y - margin - height - offset;
 
-        const Rect box{x, y, x + width, y + kToastHeight};
+        const Rect box{x, y, x + width, y + height};
 
-        DrawUtils::fill(box.offset({1.5f, 1.5f}), Colour::rgb(0x000000, 0.35f * slide));
-        DrawUtils::fill(box, Colour::rgb(0x161A22, 0.95f * slide));
-        DrawUtils::fill({box.left, box.top, box.left + 2.0f, box.bottom}, accent.withAlpha(slide));
+        DrawUtils::shadow(box, Colour::rgb(0x000000, 0.45f * slide), 10.0f * s, radius,
+                          {0.0f, 3.0f * s});
+        DrawUtils::blurBehind(box, radius, 12.0f);
+        DrawUtils::fill(box, theme.panel.withAlpha(theme.panel.a * slide), radius);
+        DrawUtils::outline(box, theme.outline.withAlpha(theme.outline.a * slide), 1.0f * s, radius);
 
-        // Progress bar showing the remaining lifetime.
+        // Accent dot instead of a bar: reads better on a rounded card.
+        const float dot = 4.0f * s;
+        const float cy = box.top + height * 0.5f;
+        DrawUtils::fill({box.left + 12.0f * s - dot, cy - dot, box.left + 12.0f * s + dot, cy + dot},
+                        accent.withAlpha(slide), dot);
+
+        DrawUtils::text(toast.text, {box.left + 24.0f * s, cy - DrawUtils::textHeight(textSize) * 0.5f},
+                        theme.textActive.withAlpha(slide), textSize, DrawUtils::Weight::Medium);
+
+        // Remaining lifetime along the bottom edge.
         const float life = std::clamp(1.0f - (now - toast.born) / m_duration->value, 0.0f, 1.0f);
-        DrawUtils::fill({box.left + 2.0f, box.bottom - 1.5f, box.left + 2.0f + (width - 2.0f) * life,
-                         box.bottom},
-                        accent.withAlpha(0.55f * slide));
+        if (life > 0.0f)
+            DrawUtils::fill({box.left + radius, box.bottom - 2.0f * s,
+                             box.left + radius + (width - radius * 2.0f) * life, box.bottom - 1.0f * s},
+                            accent.withAlpha(0.5f * slide), 1.0f * s);
 
-        DrawUtils::text(toast.text, {box.left + 8.0f, box.top + 3.5f},
-                        theme.textActive.withAlpha(slide));
-
-        offset += kToastHeight + kToastGap;
+        offset += height + kToastGap * s;
     }
 }
 

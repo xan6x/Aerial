@@ -6,6 +6,7 @@
 #include "Event/Events.h"
 #include "GUI/ClickGui.h"
 #include "Input/InputManager.h"
+#include "Render/D2DOverlay.h"
 #include "Render/DrawUtils.h"
 #include "SDK/ClientInstance.h"
 #include "SDK/Context.h"
@@ -31,6 +32,37 @@ Detour<void(__fastcall*)(void*)> g_levelTick;
 Detour<uintptr_t(__fastcall*)(void*, void*)> g_screenRender;
 Detour<void(__fastcall*)(void*, void*)> g_updateGraphics;
 Detour<void(__fastcall*)(void*)> g_tickBuildAction;
+Detour<void(__fastcall*)(void*, void*)> g_moveInputTick;
+// (this, events*) - the second argument is only visible at the call site, not
+// in the prologue. Declaring one argument here handed the original a garbage
+// RDX and crashed the game on the first frame.
+Detour<void(__fastcall*)(void*, void*)> g_processEvents;
+
+// Captured from its own hook so the movement state can also be cleared from the
+// player tick, which does not always run after MoveInputHandler::tick.
+void* g_moveInputHandler = nullptr;
+
+// Zeroes the small state fields MoveInputHandler::tick maintains. The qword at
+// +8 that the game's own clearMovementState also zeroes is a pointer, and
+// clearing it every tick made the game fault once input resumed, so it is left
+// alone.
+void clearMovementState(void* handler) {
+    if (!handler || !memory::isReadable(handler, 0x80))
+        return;
+
+    namespace field = offsets::field::moveInput;
+    auto* bytes = static_cast<uint8_t*>(handler);
+
+    bytes[field::flagA] = 0;
+    *reinterpret_cast<uint16_t*>(bytes + field::direction) = 0;
+    bytes[field::flagB] = 0;
+    *reinterpret_cast<uint32_t*>(bytes + field::state) = 0;
+
+    // The amounts are what actually reach the player. Clearing only the byte
+    // state left these standing, which is why movement still leaked through.
+    *reinterpret_cast<float*>(bytes + field::amountX) = 0.0f;
+    *reinterpret_cast<float*>(bytes + field::amountY) = 0.0f;
+}
 Detour<void(__fastcall*)(void*, void*, void*)> g_attack;
 Detour<void(__fastcall*)(void*, void*)> g_packetSend;
 Detour<void(__fastcall*)(void*)> g_leaveGame;
@@ -63,6 +95,7 @@ void dispatchOverlay() {
     t_drawingOverlay = true;
     g_overlays.fetch_add(1, std::memory_order_relaxed);
 
+    render::DrawUtils::beginFrame();
     guarded("Render2DEvent", [] {
         Render2DEvent event;
         event.context = Context::get().screenContext;
@@ -74,9 +107,14 @@ void dispatchOverlay() {
 }
 
 // ── MinecraftGame::updateGraphics ────────────────────────────────────────────
+// Fallback draw point. With the Direct2D overlay attached the frame is drawn
+// from Present instead, which is later still and gives real antialiasing, so
+// this path only runs when Direct2D could not attach.
 void __fastcall onUpdateGraphics(void* self, void* a2) {
     g_updateGraphics.call(self, a2);
-    dispatchOverlay();
+
+    if (!render::DrawUtils::usingD2D())
+        dispatchOverlay();
 }
 
 // ── MinecraftGame::update ────────────────────────────────────────────────────
@@ -110,6 +148,11 @@ void __fastcall onPlayerTick(void* self) {
 
     auto& context = Context::get();
     auto* player = static_cast<LocalPlayer*>(self);
+
+    // The player tick does not always follow MoveInputHandler::tick, so the
+    // movement state is cleared from both ends while the menu is open.
+    if (gui::ClickGui::get().isOpen())
+        clearMovementState(g_moveInputHandler);
 
     const bool joined = context.localPlayer != player;
     context.localPlayer = player;
@@ -174,6 +217,35 @@ uintptr_t __fastcall onScreenRender(void* self, void* screenContext) {
     // Nothing is drawn here: this pass is 3D. It only captures the context the
     // overlay later reports to modules.
     return g_screenRender.call(self, screenContext);
+}
+
+// ── MoveInputHandler::tick ───────────────────────────────────────────────────
+// Runs normally, then the movement it produced is wiped while the menu is open.
+// Letting the pass run and discarding its result keeps the input state machine
+// consistent - the alternative, skipping the whole input pass, froze the state
+// instead of clearing it.
+//
+// Only the small state fields the tick itself maintains are touched. The game's
+// own clearMovementState additionally zeroes the qword at +8, which is a
+// pointer: calling it every tick rather than at the safe points the game uses
+// left that pointer null, and the game faulted on it as soon as input resumed.
+void __fastcall onMoveInputTick(void* self, void* a2) {
+    g_moveInputHandler = self;
+
+    g_moveInputTick.call(self, a2);
+
+    if (gui::ClickGui::get().isOpen())
+        clearMovementState(self);
+}
+
+// ── ScreenView::_processEvents ───────────────────────────────────────────────
+// The game's UI event pump. Skipping it while the menu is open stops clicks
+// from reaching the screen underneath - without this, pressing a button in the
+// client menu also pressed whatever game button happened to sit behind it.
+void __fastcall onProcessEvents(void* self, void* events) {
+    if (gui::ClickGui::get().isOpen())
+        return;
+    g_processEvents.call(self, events);
 }
 
 // ── ClientInstance::tickBuildAction ──────────────────────────────────────────
@@ -245,6 +317,8 @@ uint64_t gameUpdateCount() { return g_gameUpdates.load(std::memory_order_relaxed
 
 uint64_t overlayCount() { return g_overlays.load(std::memory_order_relaxed); }
 
+void* moveInputHandler() { return g_moveInputHandler; }
+
 bool installAll() {
     if (!HookManager::get().init())
         return false;
@@ -275,6 +349,17 @@ bool installAll() {
                             memory::rva(func::MinecraftGame_updateGraphics), &onUpdateGraphics);
     g_tickBuildAction.attach("ClientInstance::tickBuildAction",
                              memory::rva(func::ClientInstance_tickBuildAction), &onTickBuildAction);
+    g_moveInputTick.attach("MoveInputHandler::tick", memory::rva(func::MoveInputHandler_tick),
+                           &onMoveInputTick);
+    g_processEvents.attach("ScreenView::_processEvents",
+                           memory::rva(func::ScreenView_processEvents), &onProcessEvents);
+
+    // Preferred draw path. If DXGI cannot be reached the client keeps using the
+    // game renderer through onUpdateGraphics.
+    auto& overlay = render::D2DOverlay::get();
+    overlay.setFrameCallback([] { dispatchOverlay(); });
+    if (!overlay.install())
+        LOG_WARN("Hooks", "Direct2D overlay unavailable: {}", overlay.status());
 
     return HookManager::get().enableAll();
 }

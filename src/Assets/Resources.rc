@@ -1,0 +1,5 @@
+#include "Resources.h"
+
+// Paths are relative to this file: src/Assets -> assets/
+AERIAL_ASSET_ASUKA   RCDATA "..\\..\\assets\\asuka.png"
+AERIAL_ASSET_AYANAMI RCDATA "..\\..\\assets\\ayanami.png"

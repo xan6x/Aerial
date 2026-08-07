@@ -9,28 +9,36 @@ namespace aerial::gui {
 struct Theme {
     static Theme& get();
 
-    Colour background = Colour::rgb(0x14161C, 0.92f);
-    Colour panel      = Colour::rgb(0x1B1E26, 0.95f);
-    Colour panelAlt   = Colour::rgb(0x232733, 0.95f);
-    Colour header     = Colour::rgb(0x2A2F3D, 0.98f);
-    Colour outline    = Colour::rgb(0x000000, 0.45f);
+    // Tuned for a glass surface sitting over the game: the background is dark
+    // and mostly transparent, and contrast comes from the text rather than from
+    // heavy panel fills.
+    Colour background = Colour::rgb(0x0D1015, 0.72f);
+    Colour panel      = Colour::rgb(0x141821, 0.90f);
+    Colour panelAlt   = Colour::rgb(0x1B202B, 0.92f);
+    Colour header     = Colour::rgb(0x161A23, 0.92f);
+    Colour outline    = Colour::rgb(0xFFFFFF, 0.09f);
 
-    Colour accent     = Colour::rgb(0x5B8DEF);
-    Colour accentAlt  = Colour::rgb(0x9B6BEF);
+    Colour accent     = Colour::rgb(0x6C8CFF);
+    Colour accentAlt  = Colour::rgb(0xA779FF);
 
-    Colour text       = Colour::rgb(0xE7EAF0);
-    Colour textDim    = Colour::rgb(0x9AA3B4);
+    Colour text       = Colour::rgb(0xD6DCE8);
+    Colour textDim    = Colour::rgb(0x8A93A6);
     Colour textActive = Colour::rgb(0xFFFFFF);
 
-    float cornerRadius = 3.0f;
-    float animationSpeed = 0.22f;   // 0..1 lerp factor applied per frame
+    float cornerRadius = 10.0f;
+    float animationSpeed = 0.20f;   // 0..1 lerp factor applied per frame
 
-    // Rainbow sweep used by the array list and accents when enabled.
-    bool rainbow = false;
     float rainbowSpeed = 40.0f;     // degrees of hue per second
 
-    // Hue offset for element `index`, advanced by the frame clock.
-    Colour accentFor(int index, float spread = 12.0f) const;
+    // Hue-cycled colour for element `index`, advanced by the frame clock.
+    // Callers decide whether they want it: a shared "rainbow is on" flag meant
+    // the array list silently overrode the watermark's own colour setting.
+    Colour rainbowAt(int index, float spread = 12.0f) const;
+
+    // Stable accent for the menu. The rainbow belongs to the array list; letting
+    // it drive the menu made the selection colour drift while you were reading
+    // it, which is exactly the kind of motion a settings surface should not have.
+    Colour menuAccent(int index = 0) const;
 };
 
 // Simple exponential-smoothing animator for GUI values.

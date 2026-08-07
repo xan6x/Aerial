@@ -39,6 +39,10 @@ public:
     static bool gameFocused();
     static const char* keyName(int virtualKey);
 
+    // Printable character a key produces right now, honouring the active
+    // layout and modifiers. 0 when the key is not a character key.
+    static char characterFor(int virtualKey);
+
     // Diagnostics surfaced by the watchdog line.
     struct Stats {
         uint64_t samples = 0;

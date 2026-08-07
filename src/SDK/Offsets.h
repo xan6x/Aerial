@@ -147,12 +147,22 @@ inline constexpr uintptr_t BlockSource_getEntities      = 0xB74EF0;
 
 // Input
 inline constexpr uintptr_t MoveInputHandler_tick        = 0x443DC0;
+// The database calls this LocalPlayer::clearMovementState, but it zeroes the
+// fields at +8/+0x42/+0x65 that MoveInputHandler::tick maintains, so `this` is
+// a MoveInputHandler. Not called by Aerial: the qword at +8 is a pointer, and
+// clearing it every tick (rather than at the safe points the game uses) made
+// the game fault once input resumed. The small state fields are zeroed inline
+// in the MoveInputHandler::tick hook instead.
+inline constexpr uintptr_t MoveInputHandler_clearState  = 0x444050;
 inline constexpr uintptr_t InputHandler_tick            = 0x7147D0;
 inline constexpr uintptr_t MinecraftInputHandler_updateInputMode = 0x41F250;
 inline constexpr uintptr_t ClientInputCallbacks_handleBuildOrAttackButtonPress = 0x42A520;
 inline constexpr uintptr_t ClientInputCallbacks_handleInteractButtonPress      = 0x42A4C0;
 inline constexpr uintptr_t ScreenView_handleTextChar    = 0x3EE620;
 inline constexpr uintptr_t ScreenView_handlePointerLocation = 0x3EDE50;
+// UI event pump: (this, events*). The second argument shows up only at the call
+// site (lea rdx, [rbp-0x10] in ScreenView::ScreenView), never in the prologue.
+inline constexpr uintptr_t ScreenView_processEvents    = 0x3F2470;
 
 // Networking
 inline constexpr uintptr_t LoopbackPacketSender_send    = 0x77ABC0;
@@ -344,7 +354,35 @@ inline constexpr ptrdiff_t font         = 0x88;    // HudPlayerPositionRenderer:
 inline constexpr ptrdiff_t guiData      = 0x170;   // HudVignetteRenderer::_renderVignette
 inline constexpr ptrdiff_t options      = 0x168;   // ClientInputCallbacks read [+0x71] from it
 inline constexpr ptrdiff_t mouseGrabbed = 0xB8;    // set by grabMouse, cleared by releaseMouse
+
+// MinecraftGame::tickInput reaches the InputHandler as [[this+0x168]+0x50], and
+// MinecraftScreenController::setSuspendInput walks the same pair - two
+// independent confirmations of the chain.
+inline constexpr ptrdiff_t inputHolder  = 0x168;
 } // namespace minecraftGame
+
+namespace inputHolder {
+inline constexpr ptrdiff_t inputHandler = 0x50;
+} // namespace inputHolder
+
+namespace inputHandler {
+// setSuspendInput writes its bool argument here. Non-zero means the game
+// ignores gameplay input, which is how an open screen stops movement.
+inline constexpr ptrdiff_t suspended = 0xFC;
+} // namespace inputHandler
+
+namespace moveInput {
+// Fields MoveInputHandler::tick maintains. The two floats are the movement
+// amounts it feeds the player, read at the end of the tick as [this+0x6C] and
+// [this+0x70]; zeroing only the byte state left them intact, which is why
+// movement still leaked through while the menu was open.
+inline constexpr ptrdiff_t flagA     = 0x41;
+inline constexpr ptrdiff_t direction = 0x42;   // word of direction bits
+inline constexpr ptrdiff_t flagB     = 0x47;
+inline constexpr ptrdiff_t state     = 0x65;   // dword
+inline constexpr ptrdiff_t amountX   = 0x6C;   // float
+inline constexpr ptrdiff_t amountY   = 0x70;   // float
+} // namespace moveInput
 
 namespace screen {
 // Screen+0x30 is the ClientInstance every Screen::render implementation walks.

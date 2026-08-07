@@ -2,6 +2,8 @@
 
 #include <Windows.h>
 #include <ShlObj.h>
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -99,7 +101,111 @@ std::filesystem::path Config::directory() {
     return dir;
 }
 
-bool Config::save(const std::string& name) {
+std::string Config::sanitise(const std::string& name) {
+    std::string result;
+    for (const char c : name) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '_' || c == '-')
+            result.push_back(c);
+        if (result.size() >= 32)
+            break;
+    }
+
+    const size_t first = result.find_first_not_of(' ');
+    const size_t last = result.find_last_not_of(' ');
+    if (first == std::string::npos)
+        return {};
+    return result.substr(first, last - first + 1);
+}
+
+std::filesystem::path Config::pathFor(const std::string& name) const {
+    return directory() / (name + ".json");
+}
+
+bool Config::exists(const std::string& name) const {
+    std::error_code ec;
+    return std::filesystem::exists(pathFor(name), ec);
+}
+
+std::vector<std::string> Config::list() const {
+    std::vector<std::string> names;
+
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(directory(), ec)) {
+        if (!entry.is_regular_file(ec) || entry.path().extension() != ".json")
+            continue;
+        names.push_back(entry.path().stem().string());
+    }
+
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+std::filesystem::path activeMarkerPath() { return Config::directory() / "active.txt"; }
+
+void Config::writeActiveMarker() const {
+    std::ofstream file(activeMarkerPath());
+    if (file)
+        file << m_current;
+}
+
+std::string Config::readActiveMarker() const {
+    std::ifstream file(activeMarkerPath());
+    std::string name;
+    if (file)
+        std::getline(file, name);
+    return sanitise(name);
+}
+
+void Config::loadActive() {
+    const std::string name = readActiveMarker();
+    if (!name.empty() && exists(name)) {
+        load(name);
+        return;
+    }
+    load("default");
+}
+
+bool Config::create(const std::string& rawName) {
+    const std::string name = sanitise(rawName);
+    if (name.empty()) {
+        LOG_WARN("Config", "refusing to create a config with an empty name");
+        return false;
+    }
+    if (exists(name)) {
+        LOG_WARN("Config", "config '{}' already exists", name);
+        return false;
+    }
+
+    // A new config starts as a snapshot of what is on screen right now, which
+    // is almost always what someone means by "create".
+    m_current = name;
+    writeActiveMarker();
+    return save(name);
+}
+
+bool Config::remove(const std::string& name) {
+    std::error_code ec;
+    if (!std::filesystem::remove(pathFor(name), ec)) {
+        LOG_WARN("Config", "could not delete '{}'", name);
+        return false;
+    }
+
+    LOG_INFO("Config", "deleted '{}'", name);
+
+    // Deleting the active config leaves nothing selected; fall back so save()
+    // does not write to a file the user just removed.
+    if (m_current == name) {
+        m_current = "default";
+        writeActiveMarker();
+    }
+    return true;
+}
+
+bool Config::save(const std::string& requested) {
+    const std::string name = requested.empty() ? m_current : sanitise(requested);
+    if (name.empty())
+        return false;
+
     json root;
     root["version"] = kConfigVersion;
 
@@ -115,7 +221,7 @@ bool Config::save(const std::string& name) {
         root["modules"][module->name()] = std::move(entry);
     }
 
-    const auto path = directory() / (name + ".json");
+    const auto path = pathFor(name);
     std::ofstream file(path);
     if (!file) {
         LOG_ERROR("Config", "cannot write {}", path.string());
@@ -123,12 +229,19 @@ bool Config::save(const std::string& name) {
     }
 
     file << root.dump(2);
-    LOG_INFO("Config", "saved {}", path.string());
+    LOG_INFO("Config", "saved '{}'", name);
+
+    m_current = name;
+    writeActiveMarker();
     return true;
 }
 
-bool Config::load(const std::string& name) {
-    const auto path = directory() / (name + ".json");
+bool Config::load(const std::string& requested) {
+    const std::string name = sanitise(requested);
+    if (name.empty())
+        return false;
+
+    const auto path = pathFor(name);
     std::ifstream file(path);
     if (!file) {
         LOG_INFO("Config", "no config at {}, using defaults", path.string());
@@ -169,11 +282,16 @@ bool Config::load(const std::string& name) {
             }
         }
 
-        if (module->persistEnabled() && entry->value("enabled", false))
-            module->setEnabled(true);
+        // Loading a config must be able to turn things off as well as on,
+        // otherwise switching between configs only ever accumulates modules.
+        if (module->persistEnabled())
+            module->setEnabled(entry->value("enabled", false));
     }
 
-    LOG_INFO("Config", "loaded {}", path.string());
+    m_current = name;
+    writeActiveMarker();
+
+    LOG_INFO("Config", "loaded '{}'", name);
     return true;
 }
 

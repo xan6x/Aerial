@@ -17,6 +17,10 @@ uint64_t gameUpdateCount();
 // Times the 2D overlay actually reached the game's UI pass.
 uint64_t overlayCount();
 
+// MoveInputHandler captured from its own hook, so modules can read the movement
+// amounts without another pointer chain. Null before the first input tick.
+void* moveInputHandler();
+
 // Creates every detour and enables them in a single MinHook transaction.
 // Returns false if any critical hook could not be created; non-critical hooks
 // are logged and skipped.

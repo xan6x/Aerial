@@ -148,6 +148,45 @@ bool InputManager::wasPressed(int virtualKey) const {
     return m_down[index] && !m_previous[index];
 }
 
+char InputManager::characterFor(int virtualKey) {
+    BYTE state[256]{};
+    if (!GetKeyboardState(state))
+        return 0;
+
+    const UINT scan = MapVirtualKeyW(static_cast<UINT>(virtualKey), MAPVK_VK_TO_VSC);
+
+    // First ask the active layout, so punctuation lands where the key actually
+    // prints it.
+    wchar_t buffer[8]{};
+    if (ToUnicode(static_cast<UINT>(virtualKey), scan, state, buffer, 8, 0) == 1) {
+        const wchar_t value = buffer[0];
+        if (value >= 0x20 && value <= 0x7E)
+            return static_cast<char>(value);
+    }
+
+    // Otherwise fall back to the key's own label. On a non-Latin layout the
+    // call above returns Cyrillic, which cannot go into a file name and used to
+    // be dropped - so letters simply did not type while digits did. The key is
+    // still plainly "A" on the keyboard, and that is what a config name wants.
+    const bool shift = (state[VK_SHIFT] & 0x80) != 0;
+    const bool capsLock = (state[VK_CAPITAL] & 0x01) != 0;
+
+    if (virtualKey >= 'A' && virtualKey <= 'Z') {
+        const bool upper = shift != capsLock;
+        return static_cast<char>(upper ? virtualKey : virtualKey - 'A' + 'a');
+    }
+    if (virtualKey >= '0' && virtualKey <= '9' && !shift)
+        return static_cast<char>(virtualKey);
+    if (virtualKey >= VK_NUMPAD0 && virtualKey <= VK_NUMPAD9)
+        return static_cast<char>('0' + (virtualKey - VK_NUMPAD0));
+    if (virtualKey == VK_SPACE)
+        return ' ';
+    if (virtualKey == VK_OEM_MINUS || virtualKey == VK_SUBTRACT)
+        return shift ? '_' : '-';
+
+    return 0;
+}
+
 const char* InputManager::keyName(int virtualKey) {
     static char buffer[64];
 

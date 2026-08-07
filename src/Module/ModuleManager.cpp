@@ -16,6 +16,9 @@ void ModuleManager::registerAll() {
     if (!m_modules.empty())
         return;
 
+    // Movement
+    add<modules::InventoryMove>();
+
     // Render
     add<modules::Watermark>();
     add<modules::ArrayList>();
@@ -23,6 +26,7 @@ void ModuleManager::registerAll() {
 
     // Misc
     add<modules::ClickGuiModule>();
+    add<modules::Direct2D>();
     add<modules::VSync>();
     add<modules::PacketLogger>();
 

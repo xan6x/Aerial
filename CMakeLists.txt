@@ -43,7 +43,7 @@ file(GLOB_RECURSE AERIAL_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.cpp
     ${CMAKE_SOURCE_DIR}/src/*.h)
 
-add_library(AerialClient SHARED ${AERIAL_SOURCES})
+add_library(AerialClient SHARED ${AERIAL_SOURCES} ${CMAKE_SOURCE_DIR}/src/Assets/Resources.rc)
 
 source_group(TREE ${CMAKE_SOURCE_DIR}/src PREFIX src FILES ${AERIAL_SOURCES})
 
@@ -53,7 +53,11 @@ target_link_libraries(AerialClient PRIVATE
     minhook
     nlohmann_json::nlohmann_json
     user32 shell32 ole32
-    winmm)   # PlaySound, for the notification chime
+    winmm                      # PlaySound, for the notification chime
+    # the Direct2D overlay: dxguid for effect CLSIDs, d3dcompiler for the
+    # composite shaders that blend our texture over the game's frame
+    d2d1 dwrite d3d11 dxgi dxguid d3dcompiler
+    windowscodecs)   # WIC, to decode the embedded PNGs
 
 target_compile_definitions(AerialClient PRIVATE
     WIN32_LEAN_AND_MEAN
