@@ -91,7 +91,7 @@ if(AERIAL_OBFUSCATE)
         -mllvm -irobf-cie     # constant integer encryption
         -mllvm -irobf-cfe)    # constant float encryption
 
-    set(AERIAL_HOT_REGEX "/src/Render/|/src/Hooks/GameHooks\\.cpp$")
+    set(AERIAL_HOT_REGEX "/src/Render/|/src/Hooks/GameHooks\\.cpp$|/src/Hooks/StabilityHooks\\.cpp$")
 
     foreach(src IN LISTS AERIAL_SOURCES)
         if(src MATCHES "\\.cpp$" AND NOT src MATCHES "${AERIAL_HOT_REGEX}")

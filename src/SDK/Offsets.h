@@ -152,6 +152,8 @@ inline constexpr uintptr_t ScreenView_processEvents    = 0x3F2470;
 
 inline constexpr uintptr_t IntellisenseHandler_updateIntellisense = 0x35E6B0;
 
+inline constexpr uintptr_t TextRunBuilder_appendElement = 0x3709C0;
+
 inline constexpr uintptr_t MinecraftScreenModel_executeCommand = 0x399980;
 
 inline constexpr uintptr_t AppPlatform_setFullscreenMode = 0x6ED390;
