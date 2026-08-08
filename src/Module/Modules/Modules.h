@@ -27,3 +27,4 @@
 #include "Module/Modules/ClickGuiModule.h"
 #include "Module/Modules/Direct2D.h"
 #include "Module/Modules/NoVSync.h"
+#include "Module/Modules/PackSwitcher.h"

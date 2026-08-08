@@ -110,6 +110,7 @@ bool SkyCubemap::load() {
 
     auto ctor = reinterpret_cast<TexturePtrCtor>(memory::rva(func::TexturePtr_ctor));
 
+    releaseFaces();
     m_faces.assign(offsets::func::kTexturePtrSize * 6, 0);
 
     for (int face = 0; face < 6; ++face) {
@@ -127,10 +128,29 @@ bool SkyCubemap::load() {
 }
 
 void SkyCubemap::unload() {
+    releaseFaces();
     m_faces.clear();
     m_faces.shrink_to_fit();
     m_ready = false;
     m_status = "not loaded";
+}
+
+void SkyCubemap::releaseFaces() {
+    if (m_faces.size() < func::kTexturePtrSize * 6)
+        return;
+
+    using RemoveRef = void(__fastcall*)(void*, void* const*);
+    auto removeRef = reinterpret_cast<RemoveRef>(memory::rva(func::TextureGroup_removeRef));
+
+    for (int face = 0; face < 6; ++face) {
+        void* slot = m_faces.data() + func::kTexturePtrSize * face;
+
+        void* group = *reinterpret_cast<void**>(slot);
+        if (!group || !memory::isReadable(group, func::kTextureGroupRegistry + sizeof(void*)))
+            continue;
+
+        removeRef(static_cast<uint8_t*>(group) + func::kTextureGroupRegistry, &slot);
+    }
 }
 
 void SkyCubemap::draw(void* camera) {

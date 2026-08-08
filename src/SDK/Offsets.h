@@ -29,6 +29,8 @@ inline constexpr uintptr_t MinecraftGame_endFrame       = 0x131DD0;
 inline constexpr uintptr_t MinecraftGame_onPlayerLoaded = 0x138140;
 inline constexpr uintptr_t MinecraftGame_leaveGame      = 0x138450;
 
+inline constexpr uintptr_t MinecraftGame_onActiveResourcePacksChanged = 0x1403D0;
+
 inline constexpr uintptr_t Entity_getPos                = 0x9C1700;  // verified: lea rax,[rcx+0x88]
 inline constexpr uintptr_t Entity_getPosOld             = 0x9C1710;  // verified: lea rax,[rcx+0x94]
 inline constexpr uintptr_t Entity_getPosExtrapolated    = 0x9C1720;
@@ -179,6 +181,8 @@ inline constexpr uintptr_t ItemRenderer_spinReturn      = 0x5704FA;
 
 inline constexpr uintptr_t LevelRendererCamera_renderSky = 0x5ACE40;
 
+inline constexpr uintptr_t LevelRendererCamera_updateViewArea = 0x5AC970;
+
 inline constexpr uintptr_t LevelRendererCamera_renderSunOrMoon = 0x5AD330;
 inline constexpr uintptr_t LevelRendererCamera_renderStars     = 0x5AD1D0;
 
@@ -186,6 +190,11 @@ inline constexpr uintptr_t MatrixStack_push = 0x730000;
 inline constexpr uintptr_t Matrix_scale     = 0x15D560;   // (matrix, f x, y, z)
 
 inline constexpr uintptr_t TexturePtr_ctor = 0x73F2B0;
+
+inline constexpr uintptr_t TextureGroup_removeRef = 0x44C160;
+inline constexpr ptrdiff_t kTextureGroupRegistry = 0x28;
+
+inline constexpr uintptr_t TextureGroup_uploadTexture = 0x7373F0;  // (this, a2, a3, a4, b, b)
 
 inline constexpr size_t kTexturePtrSize = 0x58;
 
@@ -454,6 +463,8 @@ inline constexpr ptrdiff_t levelRenderer = 0x690;
 // getFov lerps between these two, so a neutral view means writing 1.0 to both
 inline constexpr ptrdiff_t fovModifier    = 0x1278;  // float
 inline constexpr ptrdiff_t fovModifierOld = 0x127C;  // float
+
+inline constexpr ptrdiff_t viewRadius = 0x420;  // int
 } // namespace levelRendererCamera
 
 namespace clientInstance {

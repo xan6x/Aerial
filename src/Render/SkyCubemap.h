@@ -23,6 +23,8 @@ public:
 private:
     SkyCubemap() = default;
 
+    void releaseFaces();
+
     bool m_ready = false;
     bool m_failed = false;
     bool m_warnedBatch = false;

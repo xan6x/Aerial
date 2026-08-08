@@ -43,6 +43,7 @@ void ModuleManager::registerAll() {
     add<modules::ClickGuiModule>();
     add<modules::Direct2D>();
     add<modules::NoVSync>();
+    add<modules::PackSwitcher>();
 
     std::sort(m_modules.begin(), m_modules.end(),
               [](const auto& a, const auto& b) { return a->name() < b->name(); });
