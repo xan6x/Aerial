@@ -93,17 +93,19 @@ D2D1_RECT_F toD2D(const Rect& area) {
 
 ID2D1SolidColorBrush* g_brush = nullptr;
 ID2D1DeviceContext* g_brushOwner = nullptr;
+uint64_t g_brushGeneration = 0;
 
 ID2D1SolidColorBrush* brush(const Colour& colour) {
     auto* context = D2DOverlay::get().context();
     if (!context)
         return nullptr;
 
-    if (g_brushOwner != context) {
+    if (g_brushOwner != context || g_brushGeneration != D2DOverlay::get().generation()) {
         if (g_brush)
             g_brush->Release();
         g_brush = nullptr;
         g_brushOwner = context;
+        g_brushGeneration = D2DOverlay::get().generation();
     }
     if (!g_brush && FAILED(context->CreateSolidColorBrush(toD2D(colour), &g_brush)))
         return nullptr;
@@ -184,6 +186,11 @@ bool DrawUtils::usingD2D() { return D2DOverlay::get().ready(); }
 const char* DrawUtils::backendName() { return usingD2D() ? "Direct2D" : "game renderer"; }
 
 void DrawUtils::beginFrame() {
+    // A rebuild between pushClip and popClip would otherwise leave the stack
+    // describing layers that belong to a context that no longer exists.
+    g_clipStack.clear();
+    g_softClip.clear();
+
     if (usingD2D()) {
         g_screenSize = D2DOverlay::get().size();
     } else {
@@ -557,6 +564,7 @@ void DrawUtils::releaseResources() {
         g_brush->Release();
     g_brush = nullptr;
     g_brushOwner = nullptr;
+    g_brushGeneration = 0;
 
     for (auto& [key, format] : g_formats) {
         if (format)

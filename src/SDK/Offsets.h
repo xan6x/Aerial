@@ -149,11 +149,16 @@ inline constexpr uintptr_t IntellisenseHandler_updateIntellisense = 0x35E6B0;
 
 inline constexpr uintptr_t MinecraftScreenModel_executeCommand = 0x399980;
 
+inline constexpr uintptr_t AppPlatform_setFullscreenMode = 0x6ED390;
+inline constexpr uintptr_t AppPlatform_getScreenWidth    = 0x6EBF00;
+
+inline constexpr uintptr_t g_appPlatform      = 0x194BC68;
+inline constexpr uintptr_t AppPlatform_vtable = 0x1731DA8;
+
 inline constexpr uintptr_t Options_getFloat            = 0x495600;
 
 inline constexpr uintptr_t Options_getGamma            = 0x4885C0;
 
-// ignores its 'this'; reads option 2 out of a global map. 0 first person, 1 third back, 2 third front
 inline constexpr uintptr_t Options_getPlayerViewPerspective = 0x488420;
 
 inline constexpr uintptr_t LevelRendererPlayer_getFov  = 0x5B6830;

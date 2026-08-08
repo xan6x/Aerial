@@ -115,6 +115,8 @@ void Aerial::startup(void* moduleHandle) {
 
     Config::get().loadActive();
 
+    platform::holdExecution();
+
     m_running = true;
     LOG_INFO("Aerial", "ready - press Insert for the menu, End to unload");
 }
@@ -143,6 +145,7 @@ void Aerial::shutdown() {
     render::D2DOverlay::get().shutdown();
 
     LOG_DEBUG("Aerial", "teardown: modules");
+    platform::releaseExecution();
     platform::detachFromGameInput();
     ModuleManager::get().shutdown();
     sdk::Context::get().reset();

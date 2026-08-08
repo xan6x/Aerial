@@ -19,6 +19,7 @@ struct Entry {
 
 std::unordered_map<int, Entry> g_cache;
 ID2D1DeviceContext* g_owner = nullptr;
+uint64_t g_generation = 0;
 IWICImagingFactory* g_wic = nullptr;
 
 template <typename T>
@@ -121,9 +122,10 @@ ID2D1Bitmap* get(int resourceId) {
     if (!D2DOverlay::get().ready() || !context)
         return nullptr;
 
-    if (g_owner != context) {
+    if (g_owner != context || g_generation != D2DOverlay::get().generation()) {
         releaseAll();
         g_owner = context;
+        g_generation = D2DOverlay::get().generation();
     }
 
     const auto it = g_cache.find(resourceId);

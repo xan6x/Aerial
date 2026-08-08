@@ -37,6 +37,8 @@ public:
     Vec2 size() const { return m_size; }
 
     ID2D1DeviceContext* context() const { return m_context; }
+
+    uint64_t generation() const { return m_generation; }
     IDWriteFactory* dwrite() const { return m_dwrite; }
 
     const char* status() const { return m_status; }
@@ -55,6 +57,7 @@ private:
 
     void composite(IDXGISwapChain* swapChain);
     ID3D11RenderTargetView* currentTarget(IDXGISwapChain* swapChain);
+    bool boundTo(IDXGISwapChain* swapChain);
 
     ID2D1Factory1* m_factory = nullptr;
     ID2D1DeviceContext* m_context = nullptr;
@@ -64,6 +67,10 @@ private:
     std::function<void()> m_frameCallback;
 
     Vec2 m_size;
+
+    IDXGISwapChain* m_chain = nullptr;
+    uint64_t m_generation = 0;
+    bool m_needsRebuild = false;
     bool m_ready = false;
     bool m_enabled = true;
     bool m_installed = false;

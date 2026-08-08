@@ -37,6 +37,18 @@ std::atomic<uint64_t> g_presentCalls{0};
 std::atomic<uint64_t> g_acquireFailures{0};
 constexpr uint64_t kAcquireComplaint = 60;
 
+// The game side taking the shared texture is the last thing between us and the
+// screen, and it used to fail in silence: the overlay drew, the composite ran,
+// and the one call that matters was skipped.
+std::atomic<uint64_t> g_compositeFailures{0};
+constexpr uint64_t kCompositeStall = 30;
+
+// Rebuilding costs a device and a shared texture, so a target that keeps
+// refusing draws gets a couple of tries and then we hand the frame back to the
+// game's own renderer rather than churn every frame.
+std::atomic<uint64_t> g_drawFailures{0};
+constexpr uint64_t kDrawRetries = 3;
+
 template <typename T>
 void release(T*& object) {
     if (object) {
@@ -450,10 +462,25 @@ bool D2DOverlay::createTarget(IDXGISwapChain* swapChain) {
         return false;
     }
 
+    m_chain = swapChain;
+    ++m_generation;
     m_ready = true;
     m_status = "ready";
     LOG_INFO("D2D", "overlay ready: {}x{} on a private BGRA device", backDesc.Width, backDesc.Height);
     return true;
+}
+
+bool D2DOverlay::boundTo(IDXGISwapChain* swapChain) {
+    if (swapChain != m_chain)
+        return false;
+
+    ID3D11Device* device = nullptr;
+    if (FAILED(swapChain->GetDevice(__uuidof(ID3D11Device), reinterpret_cast<void**>(&device))))
+        return false;
+
+    const bool same = device == g_game.device;
+    release(device);
+    return same;
 }
 
 ID3D11RenderTargetView* D2DOverlay::currentTarget(IDXGISwapChain* swapChain) {
@@ -480,12 +507,28 @@ ID3D11RenderTargetView* D2DOverlay::currentTarget(IDXGISwapChain* swapChain) {
 }
 
 void D2DOverlay::composite(IDXGISwapChain* swapChain) {
-    if (!g_game.context || !g_game.overlayView)
+    static bool complained = false;
+
+    if (!g_game.context || !g_game.overlayView) {
+        if (!complained) {
+            complained = true;
+            LOG_WARN("D2D", "nothing to composite with: context {}, overlay view {}",
+                     static_cast<void*>(g_game.context), static_cast<void*>(g_game.overlayView));
+        }
         return;
+    }
 
     ID3D11RenderTargetView* target = currentTarget(swapChain);
-    if (!target)
+    if (!target) {
+        if (!complained) {
+            complained = true;
+            LOG_WARN("D2D", "no render target for the game's back buffer; the overlay is drawing "
+                            "into nothing");
+        }
         return;
+    }
+
+    complained = false;
 
     auto* context = g_game.context;
 
@@ -535,7 +578,18 @@ void D2DOverlay::composite(IDXGISwapChain* swapChain) {
     D3D11_RECT savedScissors[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE]{};
     context->RSGetScissorRects(&savedScissorCount, savedScissors);
 
-    if (SUCCEEDED(g_game.mutex->AcquireSync(kMutexKey, 16))) {
+    if (const HRESULT taken = g_game.mutex->AcquireSync(kMutexKey, 16); FAILED(taken)) {
+        const uint64_t missed = g_compositeFailures.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (missed >= kCompositeStall) {
+            g_compositeFailures.store(0, std::memory_order_relaxed);
+            m_needsRebuild = true;
+            LOG_WARN("D2D", "the game could not take the overlay texture for {} frames ({:#x}); "
+                            "rebuilding the overlay",
+                     missed, static_cast<uint32_t>(taken));
+        }
+    } else {
+        g_compositeFailures.store(0, std::memory_order_relaxed);
+
         const D3D11_VIEWPORT viewport{0.0f, 0.0f, m_size.x, m_size.y, 0.0f, 1.0f};
         const FLOAT blendFactor[4]{0.0f, 0.0f, 0.0f, 0.0f};
 
@@ -595,6 +649,7 @@ void D2DOverlay::composite(IDXGISwapChain* swapChain) {
 
 void D2DOverlay::releaseTarget() {
     m_ready = false;
+    m_chain = nullptr;
 
     images::releaseAll();
 
@@ -639,6 +694,16 @@ void D2DOverlay::onPresent(IDXGISwapChain* swapChain) {
     if (!m_enabled || m_abandoned.load(std::memory_order_relaxed))
         return;
 
+    if (m_needsRebuild) {
+        m_needsRebuild = false;
+        releaseTarget();
+    }
+
+    if (m_ready && !boundTo(swapChain)) {
+        LOG_INFO("D2D", "the game moved to another swap chain; rebuilding the overlay");
+        releaseTarget();
+    }
+
     if (!m_ready) {
         if (m_failed)
             return;
@@ -670,11 +735,22 @@ void D2DOverlay::onPresent(IDXGISwapChain* swapChain) {
 
     g_sharedMutex->ReleaseSync(kMutexKey);
 
-    if (hr == D2DERR_RECREATE_TARGET) {
-        LOG_WARN("D2D", "target lost, recreating");
+    if (FAILED(hr)) {
+        const uint64_t failures = g_drawFailures.fetch_add(1, std::memory_order_relaxed) + 1;
+
+        if (failures == 1)
+            LOG_WARN("D2D", "EndDraw failed ({:#x}); rebuilding the overlay",
+                     static_cast<uint32_t>(hr));
+
         releaseTarget();
+
+        if (failures > kDrawRetries)
+            abandon("Direct2D stopped accepting draws");
+
         return;
     }
+
+    g_drawFailures.store(0, std::memory_order_relaxed);
 
     composite(swapChain);
 }

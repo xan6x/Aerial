@@ -198,4 +198,71 @@ bool screenToGame(POINT& point) {
     return window && ScreenToClient(window, &point);
 }
 
+namespace {
+
+constexpr int kExecutionRequired = 3;
+
+HANDLE g_powerRequest = nullptr;
+
+using CreateRequestFn = HANDLE(WINAPI*)(REASON_CONTEXT*);
+using SetRequestFn = BOOL(WINAPI*)(HANDLE, int);
+using ClearRequestFn = BOOL(WINAPI*)(HANDLE, int);
+
+template <typename Fn>
+Fn kernelFunction(const char* name) {
+    const HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+    return kernel ? reinterpret_cast<Fn>(GetProcAddress(kernel, name)) : nullptr;
+}
+
+}
+
+bool holdExecution() {
+    if (g_powerRequest)
+        return true;
+
+    auto create = kernelFunction<CreateRequestFn>("PowerCreateRequest");
+    auto set = kernelFunction<SetRequestFn>("PowerSetRequest");
+    if (!create || !set) {
+        LOG_WARN("Platform", "the power request API is missing; the game can still be suspended");
+        return false;
+    }
+
+    wchar_t reason[] = L"AerialClient keeps the session connected";
+
+    REASON_CONTEXT context{};
+    context.Version = POWER_REQUEST_CONTEXT_VERSION;
+    context.Flags = POWER_REQUEST_CONTEXT_SIMPLE_STRING;
+    context.Reason.SimpleReasonString = reason;
+
+    HANDLE request = create(&context);
+    if (!request || request == INVALID_HANDLE_VALUE) {
+        LOG_WARN("Platform", "PowerCreateRequest failed ({}); the game can still be suspended",
+                 GetLastError());
+        g_powerRequest = nullptr;
+        return false;
+    }
+
+    if (!set(request, kExecutionRequired)) {
+        LOG_WARN("Platform", "PowerSetRequest failed ({}); the game can still be suspended",
+                 GetLastError());
+        CloseHandle(request);
+        return false;
+    }
+
+    g_powerRequest = request;
+    LOG_INFO("Platform", "the game is now exempt from background suspension");
+    return true;
+}
+
+void releaseExecution() {
+    if (!g_powerRequest)
+        return;
+
+    if (auto clear = kernelFunction<ClearRequestFn>("PowerClearRequest"))
+        clear(g_powerRequest, kExecutionRequired);
+
+    CloseHandle(g_powerRequest);
+    g_powerRequest = nullptr;
+}
+
 }

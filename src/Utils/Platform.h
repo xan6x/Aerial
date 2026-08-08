@@ -15,6 +15,9 @@ DWORD gameWindowThread();
 bool attachToGameInput();
 void detachFromGameInput();
 
+bool holdExecution();
+void releaseExecution();
+
 struct ForegroundInfo {
     HWND window = nullptr;
     DWORD processId = 0;
