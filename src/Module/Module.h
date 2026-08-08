@@ -59,6 +59,8 @@ public:
                          int defaultIndex = 0);
     ColourSetting* addColour(std::string name, std::string description, Colour value);
     TextSetting* addText(std::string name, std::string description, std::string value);
+    ListSetting* addList(std::string name, std::string description, std::string fromHint,
+                         std::string toHint);
 
 protected:
     virtual void onEnable() {}

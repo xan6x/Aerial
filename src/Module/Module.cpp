@@ -92,4 +92,10 @@ TextSetting* Module::addText(std::string name, std::string description, std::str
     return add<TextSetting>(std::move(name), std::move(description), std::move(value));
 }
 
+ListSetting* Module::addList(std::string name, std::string description, std::string fromHint,
+                             std::string toHint) {
+    return add<ListSetting>(std::move(name), std::move(description), std::move(fromHint),
+                            std::move(toHint));
+}
+
 }

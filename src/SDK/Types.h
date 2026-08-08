@@ -2,12 +2,36 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 #include "Utils/Math.h"
+#include "Utils/Memory.h"
 
 namespace aerial::sdk {
 
 static_assert(sizeof(std::string) == 0x20, "unexpected std::string layout — rebuild with MSVC x64");
+
+inline std::string_view gameString(const void* text) {
+    constexpr size_t kLength = 0x10;
+    constexpr size_t kCapacity = 0x18;
+    constexpr size_t kShort = 0x10;
+
+    if (!memory::isReadable(text, sizeof(std::string)))
+        return {};
+
+    const auto* bytes = static_cast<const uint8_t*>(text);
+    const size_t size = *reinterpret_cast<const size_t*>(bytes + kLength);
+    const size_t capacity = *reinterpret_cast<const size_t*>(bytes + kCapacity);
+    if (size == 0 || size > capacity)
+        return {};
+
+    const char* data = capacity < kShort ? reinterpret_cast<const char*>(bytes)
+                                         : *reinterpret_cast<const char* const*>(bytes);
+    if (!memory::isReadable(data, size))
+        return {};
+
+    return {data, size};
+}
 
 using Color = Colour;
 static_assert(sizeof(Color) == 16, "mce::Color must be four floats");

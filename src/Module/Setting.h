@@ -11,7 +11,7 @@ namespace aerial {
 
 class Setting {
 public:
-    enum class Type { Bool, Int, Float, Enum, Colour, Keybind, Text };
+    enum class Type { Bool, Int, Float, Enum, Colour, Keybind, Text, List };
 
     Setting(Type type, std::string name, std::string description)
         : m_type(type), m_name(std::move(name)), m_description(std::move(description)) {}
@@ -146,6 +146,24 @@ public:
 
     std::string value;
     std::string defaultValue;
+};
+
+class ListSetting final : public Setting {
+public:
+    struct Entry {
+        std::string from;
+        std::string to;
+    };
+
+    ListSetting(std::string name, std::string description, std::string fromHint, std::string toHint)
+        : Setting(Type::List, std::move(name), std::move(description)),
+          fromHint(std::move(fromHint)), toHint(std::move(toHint)) {}
+
+    void resetToDefault() override { entries.clear(); }
+
+    std::vector<Entry> entries;
+    std::string fromHint;
+    std::string toHint;
 };
 
 }

@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <mutex>
+#include <string>
 
 #include "Utils/Math.h"
 
@@ -33,7 +34,7 @@ public:
     static bool gameFocused();
     static const char* keyName(int virtualKey);
 
-    static char characterFor(int virtualKey);
+    static std::string characterFor(int virtualKey);
 
     struct Stats {
         uint64_t samples = 0;

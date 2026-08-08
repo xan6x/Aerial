@@ -62,6 +62,15 @@ float settingHeightFor(float scale) {
     return std::max(kSettingHeight * scale, DrawUtils::textHeight(12.5f * scale) + 16.0f * scale);
 }
 
+float settingHeightFor(const Setting& setting, float scale) {
+    const float row = settingHeightFor(scale);
+    if (setting.type() != Setting::Type::List)
+        return row;
+
+    const auto& list = static_cast<const ListSetting&>(setting);
+    return row * (2.0f + static_cast<float>(list.entries.size()));
+}
+
 Rect valuePill(const Rect& row, const std::string& value, float scale) {
     const float width =
         std::max(38.0f * scale, DrawUtils::textWidth(value, 12.5f * scale, Weight::Medium) + 18.0f * scale);
@@ -162,6 +171,8 @@ void ClickGui::open() {
 }
 
 void ClickGui::close() {
+    commitText();
+
     m_open = false;
     m_draggingSlider = nullptr;
     m_bindingModule = nullptr;
@@ -561,7 +572,7 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
         if (expanded) {
             for (const auto& setting : module->settings()) {
                 if (setting->visible())
-                    settingsHeight += settingHeightFor(scale);
+                    settingsHeight += settingHeightFor(*setting, scale);
             }
             if (settingsHeight > 0.0f)
                 settingsHeight += 8.0f * scale;
@@ -843,10 +854,38 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
         DrawUtils::outline(swatch, Colour::rgb(0xFFFFFF, 0.15f), 1.0f * scale, 5.0f * scale);
         break;
     }
+    case Setting::Type::List:
+        return renderList(static_cast<ListSetting&>(setting), module, row, scale);
+
     case Setting::Type::Text: {
         const auto& textValue = static_cast<TextSetting&>(setting);
-        DrawUtils::text(textValue.value, {row.right - kPadding * scale, label.y}, theme.text,
-                        12.5f * scale, Weight::Regular, Align::Right);
+        const bool editing = m_editingText == &setting;
+
+        const Rect field{row.left + row.width() * 0.40f, row.top + 5.0f * scale,
+                         row.right - kPadding * scale, row.bottom - 5.0f * scale};
+
+        DrawUtils::fill(field, Colour::rgb(0x000000, editing ? 0.35f : 0.22f), 5.0f * scale);
+        DrawUtils::outline(field, Colour::rgb(0xFFFFFF, editing ? 0.20f : 0.07f), 1.0f * scale,
+                           5.0f * scale);
+
+        const std::string& value = editing ? m_textBuffer : textValue.value;
+        const bool empty = value.empty();
+        const float inner = field.width() - 14.0f * scale;
+        const float textY = field.top + (field.height() - DrawUtils::textHeight(12.0f * scale)) * 0.5f;
+
+        DrawUtils::text(DrawUtils::fit(empty && !editing ? "click to edit" : value, inner,
+                                       12.0f * scale),
+                        {field.left + 7.0f * scale, textY}, empty ? theme.textDim : theme.text,
+                        12.0f * scale, Weight::Regular);
+
+        if (editing && std::fmod(clockSeconds(), 1.0f) < 0.55f) {
+            const float caretX =
+                field.left + 7.0f * scale +
+                std::min(DrawUtils::textWidth(value, 12.0f * scale), inner);
+            DrawUtils::fill({caretX + 1.0f * scale, field.top + 4.0f * scale, caretX + 2.5f * scale,
+                             field.bottom - 4.0f * scale},
+                            theme.textActive);
+        }
         break;
     }
     }
@@ -1082,6 +1121,7 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
 
     bool keepEditing = false;
     bool keepSearching = false;
+    bool keepText = false;
 
     for (auto it = m_hits.rbegin(); it != m_hits.rend(); ++it) {
         if (!it->area.contains(cursor))
@@ -1122,9 +1162,65 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
             break;
 
         case HitKind::Setting:
-            if (it->setting && it->module)
+            if (it->setting && it->module) {
+                keepText = it->setting->type() == Setting::Type::Text;
                 applySettingClick(*it, cursor, right);
+            }
             break;
+
+        case HitKind::ListCell: {
+            if (!it->setting)
+                break;
+
+            auto& list = *static_cast<ListSetting*>(it->setting);
+            if (it->index < 0 || it->index >= static_cast<int>(list.entries.size()))
+                break;
+
+            const ListSetting::Entry& entry = list.entries[static_cast<size_t>(it->index)];
+            const std::string& current = it->side == 0 ? entry.from : entry.to;
+
+            if (right) {
+                commitText();
+                (it->side == 0 ? list.entries[static_cast<size_t>(it->index)].from
+                               : list.entries[static_cast<size_t>(it->index)].to)
+                    .clear();
+                break;
+            }
+
+            beginEditing(list, it->index, it->side, current);
+            keepText = true;
+            break;
+        }
+
+        case HitKind::ListRemove: {
+            if (!it->setting)
+                break;
+
+            auto& list = *static_cast<ListSetting*>(it->setting);
+            if (it->index < 0 || it->index >= static_cast<int>(list.entries.size()))
+                break;
+
+            if (m_editingText == it->setting) {
+                m_editingText = nullptr;
+                m_editingIndex = -1;
+                m_textBuffer.clear();
+                input::InputManager::get().setCapture(false);
+            }
+            list.entries.erase(list.entries.begin() + it->index);
+            break;
+        }
+
+        case HitKind::ListAdd: {
+            if (!it->setting)
+                break;
+
+            auto& list = *static_cast<ListSetting*>(it->setting);
+            commitText();
+            list.entries.emplace_back();
+            beginEditing(list, static_cast<int>(list.entries.size()) - 1, 0, {});
+            keepText = true;
+            break;
+        }
 
         case HitKind::Module:
             if (it->module) {
@@ -1182,8 +1278,10 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
         m_editingName = false;
     if (!keepSearching && m_searching)
         m_searching = false;
+    if (!keepText)
+        commitText();
 
-    if (!m_editingName && !m_searching && !m_bindingModule)
+    if (!m_editingName && !m_searching && !m_bindingModule && !m_editingText)
         input::InputManager::get().setCapture(false);
 }
 
@@ -1222,10 +1320,158 @@ void ClickGui::applySettingClick(const Hit& hit, const Vec2& cursor, bool right)
         dragSliderTo(cursor.x);
         break;
 
-    case Setting::Type::Colour:
     case Setting::Type::Text:
+        if (right) {
+            static_cast<TextSetting&>(setting).value.clear();
+            if (m_editingText == &setting)
+                m_editingText = nullptr;
+            break;
+        }
+
+        beginEditing(setting, -1, 0, static_cast<TextSetting&>(setting).value);
+        break;
+
+    case Setting::Type::Colour:
         break;
     }
+}
+
+float ClickGui::renderList(ListSetting& list, Module& module, const Rect& header, float scale) {
+    const Theme& theme = Theme::get();
+    const float rowHeight = settingHeightFor(scale);
+    const float fontSize = 12.0f * scale;
+
+    const auto cell = [&](const Rect& area, const std::string& text, const std::string& hint,
+                          bool editing) {
+        DrawUtils::fill(area, Colour::rgb(0x000000, editing ? 0.35f : 0.22f), 5.0f * scale);
+        DrawUtils::outline(area, Colour::rgb(0xFFFFFF, editing ? 0.20f : 0.07f), 1.0f * scale,
+                           5.0f * scale);
+
+        const bool empty = text.empty();
+        const float inner = area.width() - 14.0f * scale;
+        const float textY = area.top + (area.height() - DrawUtils::textHeight(fontSize)) * 0.5f;
+
+        if (!empty || !editing) {
+            DrawUtils::text(DrawUtils::fit(empty ? hint : text, inner, fontSize),
+                            {area.left + 7.0f * scale, textY}, empty ? theme.textDim : theme.text,
+                            fontSize, Weight::Regular);
+        }
+
+        if (editing && std::fmod(clockSeconds(), 1.0f) < 0.55f) {
+            const float caretX = area.left + 7.0f * scale +
+                                 std::min(DrawUtils::textWidth(text, fontSize), inner);
+            DrawUtils::fill({caretX + 1.0f * scale, area.top + 4.0f * scale, caretX + 2.5f * scale,
+                             area.bottom - 4.0f * scale},
+                            theme.textActive);
+        }
+    };
+
+    float y = header.bottom;
+    const float left = header.left + 24.0f * scale;
+    const float buttonSize = 17.0f * scale;
+    const float arrow = 16.0f * scale;
+
+    for (size_t i = 0; i < list.entries.size(); ++i) {
+        ListSetting::Entry& entry = list.entries[i];
+        const int index = static_cast<int>(i);
+
+        const float top = y + 4.0f * scale;
+        const float bottom = y + rowHeight - 4.0f * scale;
+        const float centreY = (top + bottom) * 0.5f;
+
+        const Rect remove{header.right - kPadding * scale - buttonSize, centreY - buttonSize * 0.5f,
+                          header.right - kPadding * scale, centreY + buttonSize * 0.5f};
+
+        const float fieldsRight = remove.left - 7.0f * scale;
+        const float half = (fieldsRight - left - arrow) * 0.5f;
+
+        const Rect from{left, top, left + half, bottom};
+        const Rect to{from.right + arrow, top, fieldsRight, bottom};
+
+        const bool editingRow = m_editingText == &list && m_editingIndex == index;
+        const bool editingFrom = editingRow && m_editingSide == 0;
+        const bool editingTo = editingRow && m_editingSide == 1;
+
+        cell(from, editingFrom ? m_textBuffer : entry.from, list.fromHint, editingFrom);
+        cell(to, editingTo ? m_textBuffer : entry.to, list.toHint, editingTo);
+
+        DrawUtils::text("->", {from.right + arrow * 0.5f, centreY - DrawUtils::textHeight(fontSize) * 0.5f},
+                        theme.textDim, fontSize, Weight::Regular, Align::Centre);
+
+        const bool overRemove = remove.contains(m_cursor);
+        DrawUtils::fill(remove, Colour::rgb(0xE05A5A, overRemove ? 0.30f : 0.14f),
+                        buttonSize * 0.5f);
+        DrawUtils::text("x",
+                        {remove.left + remove.width() * 0.5f,
+                         remove.top + (remove.height() - DrawUtils::textHeight(fontSize)) * 0.5f},
+                        Colour::rgb(0xFFB4B4, overRemove ? 1.0f : 0.75f), fontSize, Weight::SemiBold,
+                        Align::Centre);
+
+        m_hits.push_back({from, HitKind::ListCell, &module, &list, m_category, {}, {}, {}, index, 0});
+        m_hits.push_back({to, HitKind::ListCell, &module, &list, m_category, {}, {}, {}, index, 1});
+        m_hits.push_back(
+            {remove, HitKind::ListRemove, &module, &list, m_category, {}, {}, {}, index, 0});
+
+        y += rowHeight;
+    }
+
+    const Rect add{left, y + 4.0f * scale, header.right - kPadding * scale,
+                   y + rowHeight - 4.0f * scale};
+    const bool overAdd = add.contains(m_cursor);
+
+    DrawUtils::fill(add, Colour::rgb(0xFFFFFF, overAdd ? 0.10f : 0.05f), 5.0f * scale);
+    DrawUtils::outline(add, Colour::rgb(0xFFFFFF, overAdd ? 0.16f : 0.07f), 1.0f * scale,
+                       5.0f * scale);
+    DrawUtils::text("+ add",
+                    {add.left + add.width() * 0.5f,
+                     add.top + (add.height() - DrawUtils::textHeight(fontSize)) * 0.5f},
+                    overAdd ? theme.text : theme.textDim, fontSize, Weight::Medium, Align::Centre);
+
+    m_hits.push_back({add, HitKind::ListAdd, &module, &list, m_category, {}, {}, {}, -1, 0});
+
+    y += rowHeight;
+    return y - header.top;
+}
+
+void ClickGui::beginEditing(Setting& setting, int index, int side, std::string current) {
+    commitText();
+
+    m_editingText = &setting;
+    m_editingIndex = index;
+    m_editingSide = side;
+    m_textBuffer = std::move(current);
+    input::InputManager::get().setCapture(true);
+}
+
+void ClickGui::commitText() {
+    if (!m_editingText)
+        return;
+
+    if (m_editingText->type() == Setting::Type::Text) {
+        static_cast<TextSetting*>(m_editingText)->value = m_textBuffer;
+    } else if (m_editingText->type() == Setting::Type::List) {
+        auto& list = *static_cast<ListSetting*>(m_editingText);
+        if (m_editingIndex >= 0 && m_editingIndex < static_cast<int>(list.entries.size())) {
+            ListSetting::Entry& entry = list.entries[static_cast<size_t>(m_editingIndex)];
+            (m_editingSide == 0 ? entry.from : entry.to) = m_textBuffer;
+        }
+    }
+
+    m_editingText = nullptr;
+    m_editingIndex = -1;
+    m_editingSide = 0;
+    m_textBuffer.clear();
+    input::InputManager::get().setCapture(false);
+}
+
+void ClickGui::popCharacter(std::string& text) {
+    if (text.empty())
+        return;
+
+    size_t last = text.size() - 1;
+    while (last > 0 && (static_cast<uint8_t>(text[last]) & 0xC0) == 0x80)
+        --last;
+    text.erase(last);
 }
 
 void ClickGui::onKey(KeyEvent& event) {
@@ -1261,8 +1507,9 @@ void ClickGui::onKey(KeyEvent& event) {
         }
 
         if (m_search.size() < 24) {
-            if (const char c = input::InputManager::characterFor(event.key)) {
-                m_search.push_back(c);
+            const std::string typed = input::InputManager::characterFor(event.key);
+            if (!typed.empty()) {
+                m_search += typed;
                 m_moduleScroll.reset();
             }
         }
@@ -1304,10 +1551,46 @@ void ClickGui::onKey(KeyEvent& event) {
             break;
         }
 
-        if (m_nameBuffer.size() < 32) {
-            if (const char c = input::InputManager::characterFor(event.key))
-                m_nameBuffer.push_back(c);
+        if (m_nameBuffer.size() < 32)
+            m_nameBuffer += input::InputManager::characterFor(event.key);
+        return;
+    }
+
+    if (m_editingText) {
+        event.cancel();
+
+        switch (event.key) {
+        case VK_ESCAPE:
+            m_editingText = nullptr;
+            input::InputManager::get().setCapture(false);
+            return;
+
+        case VK_RETURN:
+        case VK_TAB: {
+            Setting* const setting = m_editingText;
+            const int index = m_editingIndex;
+            const bool toSecond = setting->type() == Setting::Type::List && m_editingSide == 0;
+
+            commitText();
+
+            if (toSecond) {
+                auto& list = *static_cast<ListSetting*>(setting);
+                if (index >= 0 && index < static_cast<int>(list.entries.size()))
+                    beginEditing(*setting, index, 1, list.entries[static_cast<size_t>(index)].to);
+            }
+            return;
         }
+
+        case VK_BACK:
+            popCharacter(m_textBuffer);
+            return;
+
+        default:
+            break;
+        }
+
+        if (m_textBuffer.size() < 240)
+            m_textBuffer += input::InputManager::characterFor(event.key);
         return;
     }
 

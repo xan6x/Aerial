@@ -15,6 +15,7 @@
 #include "Module/Modules/Notifications.h"
 #include "Module/Modules/Watermark.h"
 
+#include "Module/Modules/Aliases.h"
 #include "Module/Modules/AutoSprint.h"
 #include "Module/Modules/DiagonalSprint.h"
 #include "Module/Modules/ItemDelayFix.h"

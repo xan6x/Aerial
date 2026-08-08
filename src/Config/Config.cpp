@@ -47,6 +47,12 @@ json serialise(const Setting& setting) {
         const auto& colour = static_cast<const ColourSetting&>(setting).value;
         return json::array({colour.r, colour.g, colour.b, colour.a});
     }
+    case Setting::Type::List: {
+        json entries = json::array();
+        for (const auto& entry : static_cast<const ListSetting&>(setting).entries)
+            entries.push_back(json{{"from", entry.from}, {"to", entry.to}});
+        return entries;
+    }
     }
     return nullptr;
 }
@@ -69,6 +75,18 @@ void deserialise(Setting& setting, const json& value) {
         case Setting::Type::Text:
             static_cast<TextSetting&>(setting).value = value.get<std::string>();
             break;
+        case Setting::Type::List: {
+            auto& target = static_cast<ListSetting&>(setting);
+            target.entries.clear();
+            for (const auto& item : value) {
+                ListSetting::Entry entry;
+                entry.from = item.value("from", std::string{});
+                entry.to = item.value("to", std::string{});
+                if (!entry.from.empty() || !entry.to.empty())
+                    target.entries.push_back(std::move(entry));
+            }
+            break;
+        }
         case Setting::Type::Enum: {
             auto& target = static_cast<EnumSetting&>(setting);
             const auto name = value.get<std::string>();

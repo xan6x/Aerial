@@ -31,6 +31,7 @@ void ModuleManager::registerAll() {
     add<modules::Notifications>();
     add<modules::Watermark>();
 
+    add<modules::Aliases>();
     add<modules::AutoSprint>();
     add<modules::DiagonalSprint>();
     add<modules::ItemDelayFix>();

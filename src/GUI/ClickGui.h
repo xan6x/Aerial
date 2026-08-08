@@ -70,6 +70,11 @@ private:
 
     void dragSliderTo(float x);
 
+    void commitText();
+    float renderList(ListSetting& list, Module& module, const Rect& header, float scale);
+    void beginEditing(Setting& setting, int index, int side, std::string current);
+    static void popCharacter(std::string& text);
+
     Animated& animation(const void* key, float initial = 0.0f);
 
     std::vector<Module*> visibleModules() const;
@@ -92,6 +97,9 @@ private:
         ConfigCreate,
         SearchField,
         SearchClear,
+        ListCell,
+        ListRemove,
+        ListAdd,
     };
 
     struct Hit {
@@ -104,6 +112,9 @@ private:
 
         Rect track;
         Rect grab;
+
+        int index = -1;
+        int side = 0;
     };
     std::vector<Hit> m_hits;
 
@@ -129,6 +140,11 @@ private:
     Setting* m_draggingSlider = nullptr;
     Rect m_draggingSliderRect;
     Module* m_bindingModule = nullptr;
+
+    Setting* m_editingText = nullptr;
+    int m_editingIndex = -1;
+    int m_editingSide = 0;
+    std::string m_textBuffer;
 
     float m_transition = 0.0f;
 
