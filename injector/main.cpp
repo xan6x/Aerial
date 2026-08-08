@@ -19,8 +19,11 @@ namespace net = aerial::net;
 constexpr wchar_t kProcessName[] = L"Minecraft.Windows.exe";
 constexpr wchar_t kDllName[] = L"AerialClient.dll";
 
+// The asset attached to the release tagged "latest". This form of the URL needs
+// no API call - it answers with a redirect to wherever the asset actually lives,
+// and it keeps pointing at the newest upload as long as the tag is moved.
 constexpr wchar_t kClientUrl[] =
-    L"https://raw.githubusercontent.com/xan6x/AerialClient/main/AerialClient.dll";
+    L"https://github.com/xan6x/AerialClient/releases/download/latest/AerialClient.dll";
 
 void reportError(const std::wstring& what) {
     const DWORD code = GetLastError();
@@ -158,8 +161,8 @@ bool fetchClient(const std::filesystem::path& destination) {
         return false;
     }
     if (!looksLikeClient(response.body)) {
-        std::wcerr << L"[-] what came back is not an x64 DLL - check that AerialClient.dll is "
-                      L"committed on main and stored directly rather than through LFS\n";
+        std::wcerr << L"[-] what came back is not an x64 DLL - check that the release tagged "
+                      L"'latest' has an asset named AerialClient.dll\n";
         return false;
     }
 
