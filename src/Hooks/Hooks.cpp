@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "Hooks/HookRegistry.h"
-#include "Render/D2DOverlay.h"
+#include "Render/Overlay.h"
 #include "Utils/Hook.h"
 #include "Utils/Logger.h"
 
@@ -54,7 +54,7 @@ bool installAll() {
 }
 
 void removeAll() {
-    render::D2DOverlay::get().setEnabled(false);
+    render::Overlay::get().setEnabled(false);
     HookManager::get().shutdown();
 }
 

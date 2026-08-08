@@ -4,9 +4,9 @@
 
 namespace aerial::modules {
 
-class Direct2D final : public Module {
+class Overlay final : public Module {
 public:
-    Direct2D();
+    Overlay();
     std::string suffix() const override;
 
 protected:

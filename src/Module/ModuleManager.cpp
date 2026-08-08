@@ -41,7 +41,7 @@ void ModuleManager::registerAll() {
     add<modules::SensMultiplier>();
 
     add<modules::ClickGuiModule>();
-    add<modules::Direct2D>();
+    add<modules::Overlay>();
     add<modules::NoVSync>();
     add<modules::PackSwitcher>();
 

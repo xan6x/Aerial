@@ -1,24 +1,26 @@
 #include "Render/Images.h"
 
 #include <Windows.h>
-#include <d2d1_1.h>
+#include <d3d11.h>
 #include <wincodec.h>
 
+#include <cstdint>
 #include <unordered_map>
+#include <vector>
 
-#include "Render/D2DOverlay.h"
+#include "Render/Overlay.h"
 #include "Utils/Logger.h"
 
 namespace aerial::render::images {
 namespace {
 
 struct Entry {
-    ID2D1Bitmap* bitmap = nullptr;
+    ID3D11ShaderResourceView* view = nullptr;
     Vec2 size;
 };
 
 std::unordered_map<int, Entry> g_cache;
-ID2D1DeviceContext* g_owner = nullptr;
+ID3D11Device* g_owner = nullptr;
 uint64_t g_generation = 0;
 IWICImagingFactory* g_wic = nullptr;
 
@@ -56,7 +58,7 @@ HMODULE selfModule() {
     return module;
 }
 
-Entry decode(int resourceId, ID2D1DeviceContext* context) {
+Entry decode(int resourceId, ID3D11Device* device) {
     Entry entry;
 
     auto* factory = wic();
@@ -89,52 +91,85 @@ Entry decode(int resourceId, ID2D1DeviceContext* context) {
         hr = decoder->GetFrame(0, &frame);
     if (SUCCEEDED(hr))
         hr = factory->CreateFormatConverter(&converter);
-    if (SUCCEEDED(hr)) {
-
-        hr = converter->Initialize(frame, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
-                                   nullptr, 0.0, WICBitmapPaletteTypeMedianCut);
-    }
     if (SUCCEEDED(hr))
-        hr = context->CreateBitmapFromWicBitmap(converter, nullptr, &entry.bitmap);
+        hr = converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
+                                   nullptr, 0.0, WICBitmapPaletteTypeMedianCut);
+
+    UINT width = 0;
+    UINT height = 0;
+    std::vector<uint8_t> pixels;
+    if (SUCCEEDED(hr))
+        hr = converter->GetSize(&width, &height);
+    if (SUCCEEDED(hr) && width > 0 && height > 0) {
+        pixels.resize(static_cast<size_t>(width) * height * 4);
+        const UINT stride = width * 4;
+        hr = converter->CopyPixels(nullptr, stride, static_cast<UINT>(pixels.size()), pixels.data());
+    }
 
     release(converter);
     release(frame);
     release(decoder);
     release(stream);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr) || pixels.empty()) {
         LOG_ERROR("Images", "resource {} failed to decode ({:#x})", resourceId,
                   static_cast<uint32_t>(hr));
         return entry;
     }
 
-    const auto size = entry.bitmap->GetSize();
-    entry.size = {size.width, size.height};
-    LOG_INFO("Images", "resource {} loaded, {}x{}", resourceId, static_cast<int>(size.width),
-             static_cast<int>(size.height));
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = width;
+    desc.Height = height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA init{};
+    init.pSysMem = pixels.data();
+    init.SysMemPitch = width * 4;
+
+    ID3D11Texture2D* texture = nullptr;
+    if (FAILED(device->CreateTexture2D(&desc, &init, &texture))) {
+        LOG_ERROR("Images", "resource {} texture creation failed", resourceId);
+        return entry;
+    }
+
+    hr = device->CreateShaderResourceView(texture, nullptr, &entry.view);
+    release(texture);
+    if (FAILED(hr)) {
+        entry.view = nullptr;
+        return entry;
+    }
+
+    entry.size = {static_cast<float>(width), static_cast<float>(height)};
+    LOG_INFO("Images", "resource {} loaded, {}x{}", resourceId, width, height);
     return entry;
 }
 
 }
 
-ID2D1Bitmap* get(int resourceId) {
-    auto* context = D2DOverlay::get().context();
-    if (!D2DOverlay::get().ready() || !context)
+ID3D11ShaderResourceView* get(int resourceId) {
+    auto& overlay = Overlay::get();
+    ID3D11Device* device = overlay.device();
+    if (!overlay.ready() || !device)
         return nullptr;
 
-    if (g_owner != context || g_generation != D2DOverlay::get().generation()) {
+    if (g_owner != device || g_generation != overlay.generation()) {
         releaseAll();
-        g_owner = context;
-        g_generation = D2DOverlay::get().generation();
+        g_owner = device;
+        g_generation = overlay.generation();
     }
 
     const auto it = g_cache.find(resourceId);
     if (it != g_cache.end())
-        return it->second.bitmap;
+        return it->second.view;
 
-    const Entry entry = decode(resourceId, context);
+    const Entry entry = decode(resourceId, device);
     g_cache[resourceId] = entry;
-    return entry.bitmap;
+    return entry.view;
 }
 
 Vec2 size(int resourceId) {
@@ -145,7 +180,7 @@ Vec2 size(int resourceId) {
 
 void releaseAll() {
     for (auto& [id, entry] : g_cache)
-        release(entry.bitmap);
+        release(entry.view);
     g_cache.clear();
     g_owner = nullptr;
 }

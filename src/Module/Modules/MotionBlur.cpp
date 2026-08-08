@@ -1,7 +1,7 @@
 #include "Module/Modules/MotionBlur.h"
 
 #include "Event/Events.h"
-#include "Render/D2DOverlay.h"
+#include "Render/Overlay.h"
 #include "Render/MotionBlur.h"
 
 namespace aerial::modules {
@@ -21,7 +21,7 @@ std::string MotionBlur::suffix() const {
     if (!enabled())
         return {};
 
-    if (render::D2DOverlay::get().presentCount() == 0)
+    if (render::Overlay::get().presentCount() == 0)
         return "no present hook";
 
     return render::MotionBlur::get().failed() ? render::MotionBlur::get().status() : std::string{};

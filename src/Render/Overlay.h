@@ -1,21 +1,22 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 
 #include "Utils/Math.h"
 
-struct ID2D1DeviceContext;
-struct ID2D1Factory1;
+struct ID3D11Device;
+struct ID3D11DeviceContext;
 struct ID3D11RenderTargetView;
-struct IDWriteFactory;
+struct ID3D11Texture2D;
 struct IDXGISwapChain;
 
 namespace aerial::render {
 
-class D2DOverlay {
+class Overlay {
 public:
-    static D2DOverlay& get();
+    static Overlay& get();
 
     bool install();
     void shutdown();
@@ -36,45 +37,39 @@ public:
 
     Vec2 size() const { return m_size; }
 
-    ID2D1DeviceContext* context() const { return m_context; }
+    ID3D11Device* device() const { return m_device; }
+    ID3D11DeviceContext* context() const { return m_context; }
 
     uint64_t generation() const { return m_generation; }
-    IDWriteFactory* dwrite() const { return m_dwrite; }
 
     const char* status() const { return m_status; }
 
     uint64_t presentCount() const;
 
 private:
-    D2DOverlay() = default;
+    Overlay() = default;
 
-    friend struct D2DHooks;
+    friend struct OverlayHooks;
 
-    bool createTarget(IDXGISwapChain* swapChain);
+    ID3D11RenderTargetView* currentTarget(IDXGISwapChain* swapChain);
     void releaseTarget();
     void onPresent(IDXGISwapChain* swapChain);
     void onResize();
-
-    void composite(IDXGISwapChain* swapChain);
-    ID3D11RenderTargetView* currentTarget(IDXGISwapChain* swapChain);
-    bool boundTo(IDXGISwapChain* swapChain);
-
-    ID2D1Factory1* m_factory = nullptr;
-    ID2D1DeviceContext* m_context = nullptr;
-    IDWriteFactory* m_dwrite = nullptr;
-    void* m_targetBitmap = nullptr;
 
     std::function<void()> m_frameCallback;
 
     Vec2 m_size;
 
+    ID3D11Device* m_device = nullptr;
+    ID3D11DeviceContext* m_context = nullptr;
+    ID3D11RenderTargetView* m_target = nullptr;
+    ID3D11Texture2D* m_targetTexture = nullptr;
+
     IDXGISwapChain* m_chain = nullptr;
     uint64_t m_generation = 0;
-    bool m_needsRebuild = false;
     bool m_ready = false;
     bool m_enabled = true;
     bool m_installed = false;
-    bool m_failed = false;
 
     std::atomic<bool> m_abandoned{false};
 

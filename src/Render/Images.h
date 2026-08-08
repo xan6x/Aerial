@@ -2,13 +2,13 @@
 
 #include "Utils/Math.h"
 
-struct ID2D1Bitmap;
+struct ID3D11ShaderResourceView;
 
 namespace aerial::render {
 
 namespace images {
 
-ID2D1Bitmap* get(int resourceId);
+ID3D11ShaderResourceView* get(int resourceId);
 
 Vec2 size(int resourceId);
 

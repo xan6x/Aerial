@@ -10,7 +10,7 @@
 #include "Hooks/Hooks.h"
 #include "Hooks/InputHooks.h"
 #include "Input/InputManager.h"
-#include "Render/D2DOverlay.h"
+#include "Render/Overlay.h"
 #include "Render/DrawUtils.h"
 #include "SDK/ClientInstance.h"
 #include "SDK/Context.h"
@@ -107,12 +107,12 @@ void checkPresentPath(uint64_t updates) {
         return;
 
     reported = true;
-    if (render::D2DOverlay::get().presentCount() != 0)
+    if (render::Overlay::get().presentCount() != 0)
         return;
 
-    LOG_WARN("D2D", "the swap chain was hooked but Present never came through it in {} updates; "
+    LOG_WARN("D3D", "the swap chain was hooked but Present never came through it in {} updates; "
                     "the game is presenting from a different swap chain, so MotionBlur and the "
-                    "Direct2D overlay cannot run this launch",
+                    "overlay cannot run this launch",
              updates);
 }
 
@@ -133,9 +133,9 @@ bool direct2DDrawing() {
     if (updates <= last + kOverlayStallUpdates)
         return true;
 
-    LOG_WARN("Hooks", "Direct2D has not drawn a frame in {} updates while reporting '{}'",
-             updates - last, render::D2DOverlay::get().status());
-    render::D2DOverlay::get().abandon("Present intercepted but no frames came out of it");
+    LOG_WARN("Hooks", "the overlay has not drawn a frame in {} updates while reporting '{}'",
+             updates - last, render::Overlay::get().status());
+    render::Overlay::get().abandon("Present intercepted but no frames came out of it");
     return false;
 }
 
@@ -307,7 +307,7 @@ bool install() {
     g_updateGraphics.attach("MinecraftGame::updateGraphics",
                             memory::rva(func::MinecraftGame_updateGraphics), &onUpdateGraphics);
 
-    auto& overlay = render::D2DOverlay::get();
+    auto& overlay = render::Overlay::get();
     overlay.setFrameCallback([] {
 
         g_lastD2DUpdate.store(g_gameUpdates.load(std::memory_order_relaxed),
@@ -315,7 +315,7 @@ bool install() {
         dispatchOverlay();
     });
     if (!overlay.install())
-        LOG_WARN("Hooks", "Direct2D overlay unavailable: {}", overlay.status());
+        LOG_WARN("Hooks", "overlay unavailable: {}", overlay.status());
 
     return true;
 }

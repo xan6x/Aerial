@@ -9,7 +9,7 @@
 #include "Hooks/Hooks.h"
 #include "Input/InputManager.h"
 #include "Module/ModuleManager.h"
-#include "Render/D2DOverlay.h"
+#include "Render/Overlay.h"
 #include "Render/DrawUtils.h"
 #include "Render/MotionBlur.h"
 #include "SDK/Context.h"
@@ -105,7 +105,7 @@ void Aerial::startup(void* moduleHandle) {
         hooks::removeAll();
         render::DrawUtils::releaseResources();
         render::MotionBlur::get().shutdown();
-        render::D2DOverlay::get().shutdown();
+        render::Overlay::get().shutdown();
         ModuleManager::get().shutdown();
 
         crash::remove();
@@ -142,7 +142,7 @@ void Aerial::shutdown() {
     LOG_DEBUG("Aerial", "teardown: overlay");
     render::DrawUtils::releaseResources();
     render::MotionBlur::get().shutdown();
-    render::D2DOverlay::get().shutdown();
+    render::Overlay::get().shutdown();
 
     LOG_DEBUG("Aerial", "teardown: modules");
     platform::releaseExecution();

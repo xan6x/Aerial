@@ -3,7 +3,7 @@
 #include "Aerial.h"
 #include "Hooks/Hooks.h"
 #include "Input/InputManager.h"
-#include "Render/D2DOverlay.h"
+#include "Render/Overlay.h"
 #include "Render/DrawUtils.h"
 #include "Utils/Logger.h"
 #include "Utils/Platform.h"
@@ -39,7 +39,7 @@ void logHeartbeat() {
              input.hookCalls - lastInput.hookCalls, input.wheelEvents - lastInput.wheelEvents,
              input.lastPointerMessage,
              draw.fills, draw.fillsSkipped, draw.texts, draw.textsSkipped,
-             aerial::render::DrawUtils::backendName(), aerial::render::D2DOverlay::get().status(),
+             aerial::render::DrawUtils::backendName(), aerial::render::Overlay::get().status(),
              aerial::platform::gameFocused(), static_cast<void*>(foreground.window),
              foreground.processId, foreground.className);
 
@@ -50,7 +50,6 @@ void logHeartbeat() {
     lastInput = input;
 }
 
-// Null when manually mapped; FreeLibraryAndExitThread must not be called then.
 HMODULE loaderModule() {
     HMODULE module = nullptr;
     const bool found = GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
