@@ -145,6 +145,8 @@ inline constexpr uintptr_t ScreenView_handlePointerLocation = 0x3EDE50;
 
 inline constexpr uintptr_t ScreenView_processEvents    = 0x3F2470;
 
+inline constexpr uintptr_t IntellisenseHandler_updateIntellisense = 0x35E6B0;
+
 inline constexpr uintptr_t Options_getFloat            = 0x495600;
 
 inline constexpr uintptr_t Options_getGamma            = 0x4885C0;
