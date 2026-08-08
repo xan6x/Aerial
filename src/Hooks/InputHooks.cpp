@@ -32,6 +32,7 @@ Detour<void(__fastcall*)(void*)> g_tickBuildAction;
 Detour<void(__fastcall*)(void*)> g_grabMouse;
 Detour<void(__fastcall*)(void*)> g_releaseMouse;
 Detour<void(__fastcall*)(void*)> g_containerTick;
+Detour<uintptr_t(__fastcall*)(void*)> g_hudTick;
 Detour<void(__fastcall*)(void*, const std::string*, int)> g_slotHovered;
 Detour<int(__fastcall*)(void*, void*)> g_collectionIndex;
 
@@ -40,6 +41,8 @@ int g_hoveredSlot = -1;
 
 void* g_containerController = nullptr;
 std::atomic<Clock::time_point> g_containerTickAt{};
+
+std::atomic<bool> g_freshSelect{false};
 
 void* g_moveInputHandler = nullptr;
 
@@ -119,6 +122,15 @@ void __fastcall onContainerTick(void* self) {
     g_containerTick.call(self);
 }
 
+uintptr_t __fastcall onHudTick(void* self) {
+    namespace hud = offsets::field::hudScreenController;
+    if (g_freshSelect.exchange(false, std::memory_order_relaxed) && self &&
+        memory::isReadable(self, hud::freshSelectFlag + sizeof(int32_t)))
+        *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(self) + hud::freshSelectFlag) = 0;
+
+    return g_hudTick.call(self);
+}
+
 void __fastcall onSlotHovered(void* self, const std::string* collection, int slot) {
     if (collection && memory::isReadable(collection, sizeof(std::string)) &&
         collection->size() < 64) {
@@ -194,6 +206,8 @@ bool install() {
                           memory::rva(func::MinecraftGame_releaseMouse), &onReleaseMouse);
     g_containerTick.attach("ContainerScreenController::tick",
                            memory::rva(func::ContainerScreenController_tick), &onContainerTick);
+    g_hudTick.attach("HudScreenController::tick",
+                     memory::rva(func::HudScreenController_tick), &onHudTick);
     g_slotHovered.attach("ContainerScreenController::_onContainerSlotPressed",
                          memory::rva(func::ContainerScreenController_onSlotHovered), &onSlotHovered);
     g_collectionIndex.attach("ContainerScreenController::getCollectionIndex",
@@ -214,6 +228,8 @@ void* containerController() {
         return nullptr;
     return g_containerController;
 }
+
+void requestFreshSelect() { g_freshSelect.store(true, std::memory_order_relaxed); }
 
 int hoveredSlot(std::string& collection) {
     collection = g_hoveredCollection;

@@ -13,6 +13,7 @@ inline constexpr uintptr_t MinecraftGame_releaseMouse   = 0x13D920;  // verified
 inline constexpr uintptr_t ClientInstance_grabMouse     = 0x11BE90;  // verified
 inline constexpr uintptr_t ClientInstance_currentScreenShouldStealMouse = 0x11C230;
 inline constexpr uintptr_t PlayerInventoryProxy_selectSlot = 0xA4EA30;
+inline constexpr uintptr_t HudScreenController_tick = 0x248F70;  // (this) -> dirty flag
 inline constexpr uintptr_t ContainerScreenController_tick = 0x207BC0;
 inline constexpr uintptr_t ContainerScreenController_handleTakePlace = 0x207F10;
 inline constexpr uintptr_t ContainerScreenController_onSlotHovered = 0x20B920;
@@ -411,6 +412,10 @@ inline constexpr ptrdiff_t takePlaceButton   = 0x488;
 inline constexpr ptrdiff_t hoveredCollection = 0x500;
 inline constexpr ptrdiff_t hoveredSlot       = 0x524;
 } // namespace containerScreenController
+
+namespace hudScreenController {
+inline constexpr ptrdiff_t freshSelectFlag = 0x448;  // int
+} // namespace hudScreenController
 
 namespace playerInventoryProxy {
 inline constexpr ptrdiff_t selectedSlot = 0x10;

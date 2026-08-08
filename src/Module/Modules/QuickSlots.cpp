@@ -4,6 +4,7 @@
 
 #include "Event/Events.h"
 #include "GUI/ClickGui.h"
+#include "Hooks/InputHooks.h"
 #include "SDK/ClientInstance.h"
 #include "SDK/Context.h"
 #include "SDK/Entity.h"
@@ -56,6 +57,8 @@ void QuickSlots::onKey(KeyEvent& event) {
     auto select = reinterpret_cast<SelectSlot>(
         memory::rva(offsets::func::PlayerInventoryProxy_selectSlot));
     select(proxy, slot, container);
+
+    hooks::requestFreshSelect();
 }
 
 }
