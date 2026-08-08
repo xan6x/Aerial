@@ -18,8 +18,9 @@ NoRender::NoRender()
     : Module("NoRender", "Hides world clutter that gets in the way during fights",
              Category::Visuals),
       m_nameTagsPatch(
-          AERIAL_STR("48 8B C4 57 41 54 41 55 41 56 41 57 48 83 EC 70 48 C7 40 C0 FE FF FF FF"),
-          {0xC3}),
+          AERIAL_STR("0F 28 DE 4C 8B C0 48 8B D6 49 8B CE E8 F4 C4 FA FF"),
+          {0x0F, 0x28, 0xDE, 0x4C, 0x8B, 0xC0, 0x48, 0x8B, 0xD6, 0x49, 0x8B, 0xCE, 0x90, 0x90,
+           0x90, 0x90, 0x90}),
       m_flamePatch(AERIAL_STR("0F 84 9F 01 00 00 F3 41 0F 10 BE BC 00 00 00"),
                    {0xE9, 0xA0, 0x01, 0x00, 0x00, 0x90}),
       m_particlesPatch(AERIAL_STR("40 53 48 83 EC 30 F3 0F 10 02 48 8B D9 F3 0F 11 05"), {0xC3}),

@@ -16,6 +16,7 @@ void ModuleManager::registerAll() {
     if (!m_modules.empty())
         return;
 
+    add<modules::AspectRatio>();
     add<modules::FogColor>();
     add<modules::FullBright>();
     add<modules::ItemPhysics>();

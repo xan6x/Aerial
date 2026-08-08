@@ -170,6 +170,10 @@ inline constexpr uintptr_t Options_getPlayerViewPerspective = 0x488420;
 
 inline constexpr uintptr_t LevelRendererPlayer_getFov  = 0x5B6830;
 
+inline constexpr uintptr_t Matrix_perspective = 0x349A40;
+inline constexpr uintptr_t LevelRendererPlayer_setupCameraPerspReturn = 0x5BA3F2;
+inline constexpr uintptr_t InGamePlayScreen_itemInHandPerspReturn = 0x356C61;
+
 inline constexpr uintptr_t LevelRenderer_tick          = 0x5B4AD0;
 
 inline constexpr uintptr_t Matrix_translate            = 0x15D390;
