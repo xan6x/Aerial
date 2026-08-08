@@ -6,6 +6,7 @@
 #include <dwrite.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <unordered_map>
 #include <vector>
@@ -404,7 +405,7 @@ struct Atlas {
 
         IDWriteGlyphRunAnalysis* analysis = nullptr;
         if (FAILED(factory()->CreateGlyphRunAnalysis(&run, 1.0f, nullptr,
-                                                     DWRITE_RENDERING_MODE_NATURAL,
+                                                     DWRITE_RENDERING_MODE_NATURAL_SYMMETRIC,
                                                      DWRITE_MEASURING_MODE_NATURAL, 0.0f, 0.0f,
                                                      &analysis))) {
             glyphs[key] = out;
@@ -802,7 +803,7 @@ void D3DRenderer::text(const std::string& value, float x, float y, const Colour&
     if (!m_ready || value.empty() || colour.a <= 0.001f)
         return;
 
-    const float baseline = y + g_atlas.ascent(weight, size);
+    const float baseline = std::round(y + g_atlas.ascent(weight, size));
     float penX = x;
 
     for (size_t i = 0; i < value.size();) {
@@ -811,8 +812,9 @@ void D3DRenderer::text(const std::string& value, float x, float y, const Colour&
         if (!g)
             continue;
         if (!g->blank && g->w > 0.0f) {
-            const Rect dest{penX + g->bearingX, baseline + g->bearingY, penX + g->bearingX + g->w,
-                            baseline + g->bearingY + g->h};
+            const float gx = std::round(penX + g->bearingX);
+            const float gy = baseline + g->bearingY;
+            const Rect dest{gx, gy, gx + g->w, gy + g->h};
             drawRectPrim(dest, colour, Colour{g->u0, g->v0, g->u1, g->v1}, 0.0f, 0.0f, 2.0f, 0.0f,
                          g_atlas.view);
         }
