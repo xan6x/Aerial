@@ -14,18 +14,30 @@ namespace {
 
 namespace func = offsets::func;
 
-constexpr uint32_t kSensitivityOptionId = 1;
+constexpr uint32_t kMouseKeyboardId = 1;
+constexpr uint32_t kTouchId = 2;
+constexpr uint32_t kControllerId = 3;
 
 Detour<float(__fastcall*)(void*, uint32_t)> g_getFloatOption;
 
-std::atomic<uint32_t> g_scaledOptionId{0};
+std::atomic<bool> g_scaleMouseKeyboard{false};
+std::atomic<bool> g_scaleController{false};
+std::atomic<bool> g_scaleTouch{false};
 std::atomic<float> g_multiplier{1.0f};
+
+bool scales(uint32_t id) {
+    switch (id) {
+    case kMouseKeyboardId: return g_scaleMouseKeyboard.load(std::memory_order_relaxed);
+    case kTouchId:         return g_scaleTouch.load(std::memory_order_relaxed);
+    case kControllerId:    return g_scaleController.load(std::memory_order_relaxed);
+    default:               return false;
+    }
+}
 
 float __fastcall onGetFloatOption(void* options, uint32_t id) {
     const float value = g_getFloatOption.call(options, id);
 
-    const uint32_t scaled = g_scaledOptionId.load(std::memory_order_relaxed);
-    if (scaled != 0 && id == scaled)
+    if (scales(id))
         return value * g_multiplier.load(std::memory_order_relaxed);
 
     return value;
@@ -46,25 +58,29 @@ SensMultiplier::SensMultiplier()
              Category::Input) {
     m_multiplier = addFloat("Multiplier", "Sensitivity is multiplied by this", 1.0f, 0.1f, 3.0f,
                             0.05f);
+    m_mouseKeyboard = addBool("Mouse & keyboard", "Scale mouse and keyboard look", true);
+    m_controller = addBool("Controller", "Scale controller look", false);
+    m_touch = addBool("Touch", "Scale touch look", false);
 
     listenAlways<Render2DEvent>(&SensMultiplier::onRender);
-}
-
-std::string SensMultiplier::suffix() const {
-    if (!enabled())
-        return {};
-    return kSensitivityOptionId == 0 ? "id unknown" : std::string{};
 }
 
 void SensMultiplier::onRender(Render2DEvent& event) {
     (void)event;
 
+    const bool on = enabled();
     g_multiplier.store(m_multiplier->value, std::memory_order_relaxed);
-    g_scaledOptionId.store(enabled() ? kSensitivityOptionId : 0, std::memory_order_relaxed);
+    g_scaleMouseKeyboard.store(on && m_mouseKeyboard->value, std::memory_order_relaxed);
+    g_scaleController.store(on && m_controller->value, std::memory_order_relaxed);
+    g_scaleTouch.store(on && m_touch->value, std::memory_order_relaxed);
 }
 
 void SensMultiplier::onEnable() {}
 
-void SensMultiplier::onDisable() { g_scaledOptionId.store(0, std::memory_order_relaxed); }
+void SensMultiplier::onDisable() {
+    g_scaleMouseKeyboard.store(false, std::memory_order_relaxed);
+    g_scaleController.store(false, std::memory_order_relaxed);
+    g_scaleTouch.store(false, std::memory_order_relaxed);
+}
 
 }

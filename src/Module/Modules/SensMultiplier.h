@@ -11,7 +11,6 @@ namespace aerial::modules {
 class SensMultiplier final : public Module {
 public:
     SensMultiplier();
-    std::string suffix() const override;
 
 protected:
     void onEnable() override;
@@ -21,6 +20,9 @@ private:
     void onRender(Render2DEvent& event);
 
     FloatSetting* m_multiplier;
+    BoolSetting* m_mouseKeyboard;
+    BoolSetting* m_controller;
+    BoolSetting* m_touch;
 };
 
 }
