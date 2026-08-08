@@ -12,6 +12,8 @@ int hoveredSlot(std::string& collection);
 
 void replayDeferredGrab();
 
+void holdMouseReleased();
+
 void healMouseGrab();
 
 }

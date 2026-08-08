@@ -41,6 +41,8 @@ public:
 
     const char* status() const { return m_status; }
 
+    uint64_t presentCount() const;
+
 private:
     D2DOverlay() = default;
 

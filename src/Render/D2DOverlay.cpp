@@ -628,6 +628,10 @@ void D2DOverlay::abandon(const char* why) {
              why);
 }
 
+uint64_t D2DOverlay::presentCount() const {
+    return g_presentCalls.load(std::memory_order_relaxed);
+}
+
 void D2DOverlay::onPresent(IDXGISwapChain* swapChain) {
     if (g_presentCalls.fetch_add(1, std::memory_order_relaxed) == 0)
         LOG_INFO("D2D", "first present intercepted, swap chain {}", static_cast<void*>(swapChain));

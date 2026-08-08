@@ -150,6 +150,11 @@ void __fastcall onGrabMouse(void* self) {
     LOG_DEBUG("Input", "grabMouse from {}, focused={}", t_ourCursorCall ? "the client" : "the game",
               focused);
 
+    if (!t_ourCursorCall && gui::ClickGui::get().isOpen()) {
+        g_deferredGrab = self;
+        return;
+    }
+
     if (!focused && !t_ourCursorCall) {
         g_deferredGrab = self;
         return;
@@ -229,8 +234,21 @@ void healMouseGrab() {
     client->releaseMouse();
 }
 
+void holdMouseReleased() {
+    if (!gui::ClickGui::get().isOpen())
+        return;
+
+    auto* client = sdk::Context::get().client;
+    if (!client || !client->mouseGrabbed())
+        return;
+
+    const OurCall ours;
+    LOG_DEBUG("Input", "the game grabbed the cursor while the menu was open; releasing it again");
+    client->releaseMouse();
+}
+
 void replayDeferredGrab() {
-    if (!g_deferredGrab || !platform::gameFocused())
+    if (!g_deferredGrab || !platform::gameFocused() || gui::ClickGui::get().isOpen())
         return;
 
     void* target = g_deferredGrab;

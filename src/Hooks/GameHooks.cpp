@@ -49,6 +49,30 @@ std::atomic<bool> g_teardownDone{false};
 
 thread_local bool t_drawingOverlay = false;
 
+constexpr float kResumeGapSeconds = 0.5f;
+constexpr int kFramesAfterResume = 3;
+
+std::atomic<float> g_lastDispatch{-1.0f};
+std::atomic<int> g_holdOffDraws{0};
+
+bool resumingFromStall(float now) {
+    const float last = g_lastDispatch.exchange(now, std::memory_order_relaxed);
+
+    if (last >= 0.0f && now - last > kResumeGapSeconds) {
+        LOG_WARN("Hooks", "{:.1f}s without a frame; skipping {} overlay draws while the game "
+                          "rebuilds its renderer",
+                 now - last, kFramesAfterResume);
+        g_holdOffDraws.store(kFramesAfterResume, std::memory_order_relaxed);
+    }
+
+    int held = g_holdOffDraws.load(std::memory_order_relaxed);
+    if (held <= 0)
+        return false;
+
+    g_holdOffDraws.store(held - 1, std::memory_order_relaxed);
+    return true;
+}
+
 void dispatchOverlay() {
 
     if (t_drawingOverlay || g_teardownDone.load(std::memory_order_relaxed))
@@ -59,6 +83,11 @@ void dispatchOverlay() {
 
     gui::advanceFrame();
 
+    if (resumingFromStall(gui::clockSeconds())) {
+        t_drawingOverlay = false;
+        return;
+    }
+
     render::DrawUtils::beginFrame();
     guarded("Render2DEvent", [] {
         Render2DEvent event;
@@ -68,6 +97,23 @@ void dispatchOverlay() {
     });
 
     t_drawingOverlay = false;
+}
+
+constexpr uint64_t kPresentGraceUpdates = 900;
+
+void checkPresentPath(uint64_t updates) {
+    static bool reported = false;
+    if (reported || updates < kPresentGraceUpdates)
+        return;
+
+    reported = true;
+    if (render::D2DOverlay::get().presentCount() != 0)
+        return;
+
+    LOG_WARN("D2D", "the swap chain was hooked but Present never came through it in {} updates; "
+                    "the game is presenting from a different swap chain, so MotionBlur and the "
+                    "Direct2D overlay cannot run this launch",
+             updates);
 }
 
 constexpr uint64_t kOverlayStallUpdates = 120;
@@ -101,7 +147,8 @@ void __fastcall onUpdateGraphics(void* self, void* a2) {
 }
 
 void __fastcall onGameUpdate(void* self) {
-    g_gameUpdates.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t updates = g_gameUpdates.fetch_add(1, std::memory_order_relaxed) + 1;
+    checkPresentPath(updates);
 
     if (g_teardownRequested.load(std::memory_order_acquire) &&
         !g_teardownDone.load(std::memory_order_relaxed)) {
@@ -113,6 +160,7 @@ void __fastcall onGameUpdate(void* self) {
         render::DrawUtils::beginFrame();
         guarded("input poll", [] { input::InputManager::get().poll(); });
         guarded("deferred grab", [] { replayDeferredGrab(); });
+        guarded("menu cursor", [] { holdMouseReleased(); });
         guarded("cursor heal", [] { healMouseGrab(); });
     }
 
