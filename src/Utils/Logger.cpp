@@ -19,17 +19,6 @@ const char* levelName(LogLevel level) {
     return "?????";
 }
 
-WORD levelColour(LogLevel level) {
-    switch (level) {
-    case LogLevel::Trace: return FOREGROUND_INTENSITY;
-    case LogLevel::Debug: return FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
-    case LogLevel::Info:  return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-    case LogLevel::Warn:  return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
-    case LogLevel::Error: return FOREGROUND_RED | FOREGROUND_INTENSITY;
-    }
-    return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-}
-
 std::filesystem::path logDirectory() {
     PWSTR local = nullptr;
     std::filesystem::path dir;
@@ -51,16 +40,8 @@ Logger& Logger::get() {
     return instance;
 }
 
-void Logger::init(bool allocConsole) {
+void Logger::init() {
     std::lock_guard lock(m_mutex);
-
-    if (allocConsole && !m_console) {
-        if (AllocConsole()) {
-            m_ownsConsole = true;
-            SetConsoleTitleW(L"AerialClient");
-        }
-        freopen_s(&m_console, "CONOUT$", "w", stdout);
-    }
 
     if (!m_file) {
         const auto path = logDirectory() / L"latest.log";
@@ -78,14 +59,6 @@ void Logger::shutdown() {
         fclose(m_file);
         m_file = nullptr;
     }
-    if (m_console) {
-        fclose(m_console);
-        m_console = nullptr;
-    }
-    if (m_ownsConsole) {
-        FreeConsole();
-        m_ownsConsole = false;
-    }
 }
 
 void Logger::write(LogLevel level, std::string_view tag, std::string_view message) {
@@ -94,22 +67,6 @@ void Logger::write(LogLevel level, std::string_view tag, std::string_view messag
     const auto stamp = std::format("{:%H:%M:%S}", floor<milliseconds>(now));
 
     std::lock_guard lock(m_mutex);
-
-    if (m_console) {
-        const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-        CONSOLE_SCREEN_BUFFER_INFO info{};
-        const bool colour = GetConsoleScreenBufferInfo(out, &info) != 0;
-
-        if (colour) SetConsoleTextAttribute(out, FOREGROUND_INTENSITY);
-        std::fprintf(m_console, "[%s] ", stamp.c_str());
-        if (colour) SetConsoleTextAttribute(out, levelColour(level));
-        std::fprintf(m_console, "%s ", levelName(level));
-        if (colour) SetConsoleTextAttribute(out, FOREGROUND_GREEN | FOREGROUND_BLUE);
-        std::fprintf(m_console, "[%.*s] ", static_cast<int>(tag.size()), tag.data());
-        if (colour) SetConsoleTextAttribute(out, info.wAttributes);
-        std::fprintf(m_console, "%.*s\n", static_cast<int>(message.size()), message.data());
-        std::fflush(m_console);
-    }
 
     if (m_file) {
         std::fprintf(m_file, "[%s] %s [%.*s] %.*s\n", stamp.c_str(), levelName(level),

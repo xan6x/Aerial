@@ -14,7 +14,7 @@ class Logger {
 public:
     static Logger& get();
 
-    void init(bool allocConsole);
+    void init();
     void shutdown();
 
     void setLevel(LogLevel level) { m_level = level; }
@@ -27,8 +27,6 @@ private:
 
     std::mutex m_mutex;
     FILE* m_file = nullptr;
-    FILE* m_console = nullptr;
-    bool m_ownsConsole = false;
     LogLevel m_level = LogLevel::Debug;
 };
 

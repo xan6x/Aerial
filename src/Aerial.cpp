@@ -77,7 +77,7 @@ bool Aerial::verifyGameBuild() {
 void Aerial::startup(void* moduleHandle) {
     m_module = moduleHandle;
 
-    Logger::get().init(true);
+    Logger::get().init();
     LOG_INFO("Aerial", "AerialClient " AERIAL_VERSION " starting");
 
     crash::install();

@@ -1,26 +1,26 @@
-// AerialClient injector.
-//
-// Minecraft: Windows 10 Edition is a UWP app running in an AppContainer, which
-// makes injection differ from a normal Win32 target in one important way: the
-// DLL file itself must be readable by the "ALL APPLICATION PACKAGES" group, or
-// LoadLibrary inside the sandbox fails with ERROR_ACCESS_DENIED.
-//
-// Run this elevated.
-
 #include <Windows.h>
 #include <AccCtrl.h>
 #include <AclAPI.h>
 #include <Sddl.h>
+#include <ShlObj.h>
 #include <TlHelp32.h>
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 
+#include "Download.h"
+
 namespace {
 
+namespace net = aerial::net;
+
 constexpr wchar_t kProcessName[] = L"Minecraft.Windows.exe";
-constexpr wchar_t kDefaultDll[] = L"AerialClient.dll";
+constexpr wchar_t kDllName[] = L"AerialClient.dll";
+
+constexpr wchar_t kClientUrl[] =
+    L"https://raw.githubusercontent.com/xan6x/AerialClient/main/AerialClient.dll";
 
 void reportError(const std::wstring& what) {
     const DWORD code = GetLastError();
@@ -49,14 +49,6 @@ DWORD findProcess(const wchar_t* name) {
     return pid;
 }
 
-// True while the client is still mapped into the target.
-//
-// This matters because LoadLibraryW on an already-loaded module does not call
-// DllMain again - it just bumps the reference count and returns. The injection
-// "succeeds", nothing starts, and the client is left half-alive with an extra
-// reference that stops the next eject from unmapping it. Ejecting also takes
-// most of a second to unwind, so injecting straight after ejecting lands in
-// exactly that window.
 bool alreadyLoaded(DWORD pid, const std::wstring& dllName) {
     const HANDLE snapshot =
         CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
@@ -80,7 +72,6 @@ bool alreadyLoaded(DWORD pid, const std::wstring& dllName) {
     return found;
 }
 
-// Adds read+execute for S-1-15-2-1 (ALL APPLICATION PACKAGES) to the DLL.
 bool grantAppContainerAccess(const std::wstring& path) {
     PSID sid = nullptr;
     if (!ConvertStringSidToSidW(L"S-1-15-2-1", &sid)) {
@@ -123,6 +114,70 @@ bool grantAppContainerAccess(const std::wstring& path) {
         std::wcerr << L"[-] granting ALL APPLICATION PACKAGES access failed (" << status << L")\n";
         return false;
     }
+    return true;
+}
+
+bool looksLikeClient(const std::vector<uint8_t>& data) {
+    if (data.size() < 0x40 || data[0] != 'M' || data[1] != 'Z')
+        return false;
+
+    const auto headerOffset = size_t(*reinterpret_cast<const int32_t*>(data.data() + 0x3C));
+    if (headerOffset + 6 > data.size())
+        return false;
+
+    const uint8_t* header = data.data() + headerOffset;
+    if (header[0] != 'P' || header[1] != 'E' || header[2] != 0 || header[3] != 0)
+        return false;
+
+    constexpr uint16_t kAmd64 = 0x8664;
+    return *reinterpret_cast<const uint16_t*>(header + 4) == kAmd64;
+}
+
+std::filesystem::path clientPath() {
+    PWSTR local = nullptr;
+    std::filesystem::path dir;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) {
+        dir = local;
+        CoTaskMemFree(local);
+    }
+    if (dir.empty())
+        dir = std::filesystem::temp_directory_path();
+
+    dir /= L"AerialClient";
+    std::error_code ignored;
+    std::filesystem::create_directories(dir, ignored);
+    return dir / kDllName;
+}
+
+bool fetchClient(const std::filesystem::path& destination) {
+    std::wcout << L"[*] downloading " << kClientUrl << L"\n";
+
+    const auto response = net::get(kClientUrl);
+    if (!response.ok) {
+        std::wcerr << L"[-] download failed: " << response.error << L"\n";
+        return false;
+    }
+    if (!looksLikeClient(response.body)) {
+        std::wcerr << L"[-] what came back is not an x64 DLL - check that AerialClient.dll is "
+                      L"committed on main and stored directly rather than through LFS\n";
+        return false;
+    }
+
+    std::ofstream out(destination, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        std::wcerr << L"[-] could not write " << destination.wstring()
+                   << L" - is the client still loaded in the game?\n";
+        return false;
+    }
+
+    out.write(reinterpret_cast<const char*>(response.body.data()),
+              std::streamsize(response.body.size()));
+    if (!out) {
+        std::wcerr << L"[-] writing " << destination.wstring() << L" failed\n";
+        return false;
+    }
+
+    std::wcout << L"[+] downloaded " << response.body.size() << L" bytes\n";
     return true;
 }
 
@@ -202,26 +257,6 @@ bool inject(DWORD pid, const std::wstring& dllPath) {
 int wmain(int argc, wchar_t** argv) {
     std::wcout << L"AerialClient injector\n";
 
-    std::filesystem::path dll = argc > 1 ? argv[1] : kDefaultDll;
-    if (dll.is_relative()) {
-        wchar_t exePath[MAX_PATH]{};
-        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-        dll = std::filesystem::path(exePath).parent_path() / dll;
-    }
-
-    if (!std::filesystem::exists(dll)) {
-        std::wcerr << L"[-] " << dll.wstring() << L" not found\n";
-        return 1;
-    }
-
-    std::wcout << L"[*] dll: " << dll.wstring() << L"\n";
-
-    if (!grantAppContainerAccess(dll.wstring())) {
-        std::wcerr << L"[-] could not grant AppContainer access - run this as administrator\n";
-        return 1;
-    }
-    std::wcout << L"[+] ALL APPLICATION PACKAGES granted read/execute\n";
-
     enableDebugPrivilege();
 
     const DWORD pid = findProcess(kProcessName);
@@ -231,21 +266,45 @@ int wmain(int argc, wchar_t** argv) {
     }
     std::wcout << L"[*] target pid: " << pid << L"\n";
 
-    // Give a still-unloading instance a moment to finish before deciding.
-    const std::wstring dllName = dll.filename().wstring();
-    for (int waited = 0; waited < 3000 && alreadyLoaded(pid, dllName); waited += 250) {
+    for (int waited = 0; waited < 3000 && alreadyLoaded(pid, kDllName); waited += 250) {
         if (waited == 0)
-            std::wcout << L"[*] " << dllName << L" is still loaded, waiting for it to unload...\n";
+            std::wcout << L"[*] " << kDllName << L" is still loaded, waiting for it to unload...\n";
         Sleep(250);
     }
 
-    if (alreadyLoaded(pid, dllName)) {
-        std::wcerr << L"[-] " << dllName
+    if (alreadyLoaded(pid, kDllName)) {
+        std::wcerr << L"[-] " << kDllName
                    << L" is still mapped into the game. Injecting now would bump its reference "
                       L"count without starting anything and leave it stuck. Press End in game, "
                       L"wait a second, then try again.\n";
         return 1;
     }
+
+    std::filesystem::path dll;
+    if (argc > 1) {
+        dll = argv[1];
+        if (dll.is_relative()) {
+            wchar_t exePath[MAX_PATH]{};
+            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+            dll = std::filesystem::path(exePath).parent_path() / dll;
+        }
+        if (!std::filesystem::exists(dll)) {
+            std::wcerr << L"[-] " << dll.wstring() << L" not found\n";
+            return 1;
+        }
+    } else {
+        dll = clientPath();
+        if (!fetchClient(dll))
+            return 1;
+    }
+
+    std::wcout << L"[*] dll: " << dll.wstring() << L"\n";
+
+    if (!grantAppContainerAccess(dll.wstring())) {
+        std::wcerr << L"[-] could not grant AppContainer access - run this as administrator\n";
+        return 1;
+    }
+    std::wcout << L"[+] ALL APPLICATION PACKAGES granted read/execute\n";
 
     if (!inject(pid, dll.wstring())) {
         std::wcerr << L"[-] injection failed\n";

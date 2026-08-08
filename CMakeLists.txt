@@ -1,11 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 project(AerialClient LANGUAGES CXX VERSION 0.1.0)
 
-# ── Target: Minecraft: Windows 10 Edition 1.1.5 (x64) ────────────────────────
-# The client is an internal DLL injected into Minecraft.Windows.exe.
-# Must be built x64 with MSVC: the SDK mirrors MSVC's ABI (vtables, std::string
-# layout, __fastcall calling convention) of the game binary.
-
 if(NOT MSVC)
     message(FATAL_ERROR "AerialClient must be built with MSVC (ABI compatibility with the game binary).")
 endif()
@@ -21,7 +16,6 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# ── Dependencies ─────────────────────────────────────────────────────────────
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
 
@@ -38,7 +32,6 @@ FetchContent_Declare(nlohmann_json
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(nlohmann_json)
 
-# ── Client DLL ───────────────────────────────────────────────────────────────
 file(GLOB_RECURSE AERIAL_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.cpp
     ${CMAKE_SOURCE_DIR}/src/*.h)
@@ -79,5 +72,4 @@ set_target_properties(AerialClient PROPERTIES
     PREFIX ""
     SUFFIX ".dll")
 
-# ── Injector (UWP-aware) ─────────────────────────────────────────────────────
 add_subdirectory(injector)
