@@ -10,7 +10,7 @@ namespace aerial::modules {
 ClickGuiModule::ClickGuiModule()
     : Module("ClickGui", "Opens the settings interface", Category::Client, VK_INSERT) {
     m_character = addEnum("Character", "Artwork behind the module list", {"None", "Rei", "Asuka"}, 1);
-    m_characterOpacity = addFloat("Character opacity", "How strongly the artwork shows", 1.0f, 0.1f,
+    m_characterOpacity = addFloat("Character opacity", "How strongly the artwork shows", 0.40f, 0.1f,
                                   1.0f, 0.05f);
     m_characterOpacity->onlyIf([this] { return !m_character->is("None"); });
 
