@@ -24,7 +24,7 @@ protected:
 private:
     void onRender(Render2DEvent& event);
 
-    BytePatch m_patch = BytePatch::nops("48 3B DF 0F 84 4E 01 00 00", 9);
+    BytePatch m_patch;
 
     BoolSetting* m_frontView;
 };

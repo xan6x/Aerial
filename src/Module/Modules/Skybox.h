@@ -19,8 +19,7 @@ protected:
 
 private:
 
-    BytePatch m_patch{"0F 85 ? ? ? ? 48 8D 54 24 30 E8 ? ? ? ? 90 48 8B 5C 24 30",
-                      {0x90, 0x90, 0x90, 0x90, 0x90, 0x90}};
+    BytePatch m_patch;
 
     enum class Found { Nothing, Cubemap, EndSky };
     Found m_found = Found::Nothing;

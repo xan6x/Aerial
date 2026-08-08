@@ -260,43 +260,33 @@ bool InputManager::wasPressed(int virtualKey) const {
 }
 
 std::string InputManager::characterFor(int virtualKey) {
-    BYTE state[256]{};
-    if (!GetKeyboardState(state))
-        return {};
+    if (virtualKey >= VK_NUMPAD0 && virtualKey <= VK_NUMPAD9)
+        return std::string(1, static_cast<char>('0' + (virtualKey - VK_NUMPAD0)));
 
-    const HKL layout = GetKeyboardLayout(
-        GetWindowThreadProcessId(platform::gameWindow(), nullptr));
+    const HKL layout = GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), nullptr));
+
+    BYTE state[256]{};
+    if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0)
+        state[VK_SHIFT] = 0x80;
+    if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
+        state[VK_CONTROL] = 0x80;
+    if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0)
+        state[VK_MENU] = 0x80;
+    if ((GetKeyState(VK_CAPITAL) & 0x0001) != 0)
+        state[VK_CAPITAL] = 0x01;
 
     const UINT scan = MapVirtualKeyExW(static_cast<UINT>(virtualKey), MAPVK_VK_TO_VSC, layout);
 
     wchar_t buffer[8]{};
     const int produced =
         ToUnicodeEx(static_cast<UINT>(virtualKey), scan, state, buffer, 8, 0, layout);
-    if (produced > 0 && buffer[0] >= 0x20 && buffer[0] != 0x7F) {
-        char utf8[16]{};
-        const int bytes = WideCharToMultiByte(CP_UTF8, 0, buffer, produced, utf8, sizeof(utf8) - 1,
-                                              nullptr, nullptr);
-        if (bytes > 0)
-            return std::string(utf8, static_cast<size_t>(bytes));
-    }
+    if (produced <= 0 || buffer[0] < 0x20 || buffer[0] == 0x7F)
+        return {};
 
-    const bool shift = (state[VK_SHIFT] & 0x80) != 0;
-    const bool capsLock = (state[VK_CAPITAL] & 0x01) != 0;
-
-    if (virtualKey >= 'A' && virtualKey <= 'Z') {
-        const bool upper = shift != capsLock;
-        return std::string(1, static_cast<char>(upper ? virtualKey : virtualKey - 'A' + 'a'));
-    }
-    if (virtualKey >= '0' && virtualKey <= '9' && !shift)
-        return std::string(1, static_cast<char>(virtualKey));
-    if (virtualKey >= VK_NUMPAD0 && virtualKey <= VK_NUMPAD9)
-        return std::string(1, static_cast<char>('0' + (virtualKey - VK_NUMPAD0)));
-    if (virtualKey == VK_SPACE)
-        return " ";
-    if (virtualKey == VK_OEM_MINUS || virtualKey == VK_SUBTRACT)
-        return shift ? "_" : "-";
-
-    return {};
+    char utf8[16]{};
+    const int bytes = WideCharToMultiByte(CP_UTF8, 0, buffer, produced, utf8, sizeof(utf8) - 1,
+                                          nullptr, nullptr);
+    return bytes > 0 ? std::string(utf8, static_cast<size_t>(bytes)) : std::string{};
 }
 
 const char* InputManager::keyName(int virtualKey) {

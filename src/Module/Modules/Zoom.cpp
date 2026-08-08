@@ -6,6 +6,7 @@
 #include "GUI/Theme.h"
 #include "Hooks/FovHooks.h"
 #include "Input/InputManager.h"
+#include "SDK/Context.h"
 
 namespace aerial::modules {
 
@@ -35,8 +36,9 @@ std::string Zoom::suffix() const {
 void Zoom::onRender(Render2DEvent& event) {
     (void)event;
 
-    const bool active = !m_hold->value ||
-                        (keybind() != 0 && input::InputManager::get().isDown(keybind()));
+    const bool active = sdk::Context::get().worldInteractive() &&
+                        (!m_hold->value ||
+                         (keybind() != 0 && input::InputManager::get().isDown(keybind())));
 
     const float target = active ? 1.0f / m_amount->value : 1.0f;
 

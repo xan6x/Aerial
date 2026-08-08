@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <functional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "Utils/Math.h"
@@ -165,5 +166,23 @@ public:
     std::string fromHint;
     std::string toHint;
 };
+
+namespace detail {
+template <typename T> struct SettingKind;
+template <> struct SettingKind<BoolSetting>    { static constexpr Setting::Type value = Setting::Type::Bool; };
+template <> struct SettingKind<IntSetting>     { static constexpr Setting::Type value = Setting::Type::Int; };
+template <> struct SettingKind<FloatSetting>   { static constexpr Setting::Type value = Setting::Type::Float; };
+template <> struct SettingKind<EnumSetting>    { static constexpr Setting::Type value = Setting::Type::Enum; };
+template <> struct SettingKind<ColourSetting>  { static constexpr Setting::Type value = Setting::Type::Colour; };
+template <> struct SettingKind<KeybindSetting> { static constexpr Setting::Type value = Setting::Type::Keybind; };
+template <> struct SettingKind<TextSetting>    { static constexpr Setting::Type value = Setting::Type::Text; };
+template <> struct SettingKind<ListSetting>    { static constexpr Setting::Type value = Setting::Type::List; };
+}
+
+template <typename T>
+T* setting_cast(Setting* s) {
+    using Bare = std::remove_const_t<T>;
+    return (s && s->type() == detail::SettingKind<Bare>::value) ? static_cast<T*>(s) : nullptr;
+}
 
 }

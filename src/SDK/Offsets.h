@@ -29,6 +29,8 @@ inline constexpr uintptr_t MinecraftGame_endFrame       = 0x131DD0;
 inline constexpr uintptr_t MinecraftGame_onPlayerLoaded = 0x138140;
 inline constexpr uintptr_t MinecraftGame_leaveGame      = 0x138450;
 
+inline constexpr uintptr_t MinecraftGame_getScreenName  = 0x138A70;
+
 inline constexpr uintptr_t MinecraftGame_onActiveResourcePacksChanged = 0x1403D0;
 
 inline constexpr uintptr_t Entity_getPos                = 0x9C1700;  // verified: lea rax,[rcx+0x88]

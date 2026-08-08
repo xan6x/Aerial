@@ -1,15 +1,16 @@
 #include "Module/Modules/PackSwitcher.h"
 
 #include "Utils/Logger.h"
+#include "Utils/Obfusc.h"
 
 namespace aerial::modules {
 
 PackSwitcher::PackSwitcher()
     : Module("PackSwitcher", "Lets you change resource packs from inside a world or server",
              Category::Client),
-      m_availableTile(BytePatch::nops("75 38 48 8B 12 E8 ? ? ? ? 48 8B 8B 10 05 00 00", 2)),
-      m_selectedTile(BytePatch::nops("75 38 48 8B 12 E8 ? ? ? ? 48 8B 8B 08 05 00 00", 2)),
-      m_commit(BytePatch::nops("0F 85 E3 01 00 00 49 8B 8E 28 05", 6)) {}
+      m_availableTile(BytePatch::nops(AERIAL_STR("75 38 48 8B 12 E8 ? ? ? ? 48 8B 8B 10 05 00 00"), 2)),
+      m_selectedTile(BytePatch::nops(AERIAL_STR("75 38 48 8B 12 E8 ? ? ? ? 48 8B 8B 08 05 00 00"), 2)),
+      m_commit(BytePatch::nops(AERIAL_STR("0F 85 E3 01 00 00 49 8B 8E 28 05"), 6)) {}
 
 std::string PackSwitcher::suffix() const {
     if (!enabled())

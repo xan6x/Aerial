@@ -57,6 +57,13 @@ public:
         using Fn = void(__fastcall*)(void*);
         reinterpret_cast<Fn>(memory::rva(offsets::func::MinecraftGame_releaseMouse))(this);
     }
+
+    std::string getScreenName() const {
+        std::string out;
+        using Fn = void(__fastcall*)(const void*, std::string*);
+        reinterpret_cast<Fn>(memory::rva(offsets::func::MinecraftGame_getScreenName))(this, &out);
+        return out;
+    }
 };
 
 class ClientInstance {

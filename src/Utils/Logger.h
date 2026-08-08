@@ -37,12 +37,23 @@ inline void logf(LogLevel level, std::string_view tag, std::format_string<Args..
         return;
     Logger::get().write(level, tag, std::format(fmt, std::forward<Args>(args)...));
 }
+
+template <typename... Args>
+int sink(const Args&...);
 }
 
 }
 
+#define LOG_ERROR(tag, ...) ::aerial::detail::logf(::aerial::LogLevel::Error, tag, __VA_ARGS__)
+
+#if defined(AERIAL_LOGGING)
 #define LOG_TRACE(tag, ...) ::aerial::detail::logf(::aerial::LogLevel::Trace, tag, __VA_ARGS__)
 #define LOG_DEBUG(tag, ...) ::aerial::detail::logf(::aerial::LogLevel::Debug, tag, __VA_ARGS__)
 #define LOG_INFO(tag, ...)  ::aerial::detail::logf(::aerial::LogLevel::Info,  tag, __VA_ARGS__)
 #define LOG_WARN(tag, ...)  ::aerial::detail::logf(::aerial::LogLevel::Warn,  tag, __VA_ARGS__)
-#define LOG_ERROR(tag, ...) ::aerial::detail::logf(::aerial::LogLevel::Error, tag, __VA_ARGS__)
+#else
+#define LOG_TRACE(tag, ...) ((void)sizeof(::aerial::detail::sink(tag, __VA_ARGS__)))
+#define LOG_DEBUG(tag, ...) ((void)sizeof(::aerial::detail::sink(tag, __VA_ARGS__)))
+#define LOG_INFO(tag, ...)  ((void)sizeof(::aerial::detail::sink(tag, __VA_ARGS__)))
+#define LOG_WARN(tag, ...)  ((void)sizeof(::aerial::detail::sink(tag, __VA_ARGS__)))
+#endif

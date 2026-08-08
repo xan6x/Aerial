@@ -10,6 +10,15 @@ Context& Context::get() {
     return instance;
 }
 
+std::string Context::currentScreenName() const {
+    if (!client || !memory::isReadable(client, 0x40))
+        return {};
+    auto* game = client->game();
+    if (!game || !memory::isReadable(game, 0xC0))
+        return {};
+    return game->getScreenName();
+}
+
 void Context::chat(const std::string& message) const {
     if (localPlayer && memory::isReadable(localPlayer))
         localPlayer->displayClientMessage(message);

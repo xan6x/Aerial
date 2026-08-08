@@ -1,5 +1,7 @@
 #include "Hooks/InputHooks.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -20,6 +22,8 @@ namespace {
 
 namespace func = offsets::func;
 
+using Clock = std::chrono::steady_clock;
+
 Detour<void(__fastcall*)(void*, void*)> g_moveInputTick;
 Detour<void(__fastcall*)(void*, void*)> g_processEvents;
 Detour<void(__fastcall*)(void*, void*, char, void*)> g_handleButtonEvent;
@@ -35,6 +39,7 @@ std::string g_hoveredCollection;
 int g_hoveredSlot = -1;
 
 void* g_containerController = nullptr;
+std::atomic<Clock::time_point> g_containerTickAt{};
 
 void* g_moveInputHandler = nullptr;
 
@@ -110,6 +115,7 @@ void __fastcall onTickBuildAction(void* self) {
 
 void __fastcall onContainerTick(void* self) {
     g_containerController = self;
+    g_containerTickAt.store(Clock::now(), std::memory_order_relaxed);
     g_containerTick.call(self);
 }
 
@@ -202,7 +208,12 @@ const Installer g_installer{"Input", &install};
 
 void clearMovementInput() { clearMovementState(g_moveInputHandler); }
 
-void* containerController() { return g_containerController; }
+void* containerController() {
+    constexpr auto kFreshFor = std::chrono::milliseconds(500);
+    if (Clock::now() - g_containerTickAt.load(std::memory_order_relaxed) > kFreshFor)
+        return nullptr;
+    return g_containerController;
+}
 
 int hoveredSlot(std::string& collection) {
     collection = g_hoveredCollection;

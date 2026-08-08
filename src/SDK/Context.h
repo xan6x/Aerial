@@ -18,6 +18,10 @@ struct Context {
 
     bool inGame() const { return localPlayer != nullptr && level != nullptr; }
 
+    bool worldInteractive() const { return client && inGame() && client->mouseGrabbed(); }
+
+    std::string currentScreenName() const;
+
     Font* font() const { return client ? client->font() : nullptr; }
 
     void chat(const std::string& message) const;

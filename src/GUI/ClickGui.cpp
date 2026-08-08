@@ -147,9 +147,9 @@ void ClickGui::dragSliderTo(float x) {
                                    std::max(1.0f, m_draggingSliderRect.width()),
                                0.0f, 1.0f);
 
-    if (auto* asFloat = dynamic_cast<FloatSetting*>(m_draggingSlider))
+    if (auto* asFloat = setting_cast<FloatSetting>(m_draggingSlider))
         asFloat->setFraction(t);
-    else if (auto* asInt = dynamic_cast<IntSetting*>(m_draggingSlider))
+    else if (auto* asInt = setting_cast<IntSetting>(m_draggingSlider))
         asInt->setFraction(t);
 }
 
@@ -158,11 +158,15 @@ ClickGui::ScrollState& ClickGui::activeScroll() {
 }
 
 void ClickGui::open() {
-    m_open = true;
-
     auto& context = sdk::Context::get();
-    if (!context.inGame())
-        LOG_INFO("ClickGui", "opened outside a world");
+
+    const std::string screen = context.currentScreenName();
+    if (screen != "start_screen" && screen != "hud_screen") {
+        LOG_DEBUG("ClickGui", "refused to open on screen '{}'", screen);
+        return;
+    }
+
+    m_open = true;
 
     if (context.client && context.inGame()) {
         context.client->releaseMouse();
@@ -205,7 +209,7 @@ int ClickGui::activeCharacter() const {
     if (!module)
         return 0;
 
-    const auto* choice = dynamic_cast<const EnumSetting*>(module->findSetting("Character"));
+    const auto* choice = setting_cast<const EnumSetting>(module->findSetting("Character"));
     if (!choice || choice->is("None"))
         return 0;
 
@@ -433,7 +437,7 @@ void ClickGui::renderCharacter(const Layout& layout, float amount) {
 
     const auto* module = ModuleManager::get().find("ClickGui");
     const auto* opacity =
-        module ? dynamic_cast<const FloatSetting*>(module->findSetting("Character opacity")) : nullptr;
+        module ? setting_cast<const FloatSetting>(module->findSetting("Character opacity")) : nullptr;
 
     const float height = layout.content.height();
     const float width = height * aspect;

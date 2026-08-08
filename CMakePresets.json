@@ -1,0 +1,27 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "obf",
+      "displayName": "Release + OLLVM (Arkari clang-cl)",
+      "description": "Obfuscated DLL build. Set ARKARI_ROOT to your Arkari install first.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-obf",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "AERIAL_OBFUSCATE": "ON",
+        "CMAKE_C_COMPILER": "$env{ARKARI_ROOT}/bin/clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "$env{ARKARI_ROOT}/bin/clang-cl.exe"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "obf",
+      "configurePreset": "obf",
+      "configuration": "Release",
+      "targets": [ "AerialClient" ]
+    }
+  ]
+}

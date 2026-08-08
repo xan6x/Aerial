@@ -23,15 +23,6 @@ public:
 
     std::vector<Module*> activeModules() const;
 
-    template <typename T>
-    T* get() const {
-        for (const auto& module : m_modules) {
-            if (auto* typed = dynamic_cast<T*>(module.get()))
-                return typed;
-        }
-        return nullptr;
-    }
-
     bool handleKey(int key, bool down);
 
 private:

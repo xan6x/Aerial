@@ -9,6 +9,8 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "AerialClient must be built for x64. Configure with -A x64.")
 endif()
 
+option(AERIAL_OBFUSCATE "Obfuscate cold code with an OLLVM clang-cl toolchain (Arkari)" OFF)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -57,19 +59,47 @@ target_compile_definitions(AerialClient PRIVATE
     NOMINMAX
     _CRT_SECURE_NO_WARNINGS
     UNICODE _UNICODE
-    AERIAL_VERSION="${PROJECT_VERSION}")
+    AERIAL_VERSION="${PROJECT_VERSION}"
+    $<$<CONFIG:Debug>:AERIAL_LOGGING>)
 
 # 4100: unreferenced parameter (event handlers ignore their event)
 # 4201: nameless struct/union
 # 4624: deleted destructor - deliberate on the SDK wrappers, which are never
 #       constructed or destroyed by us, only reinterpret_cast from game pointers
 target_compile_options(AerialClient PRIVATE
-    /W4 /wd4100 /wd4201 /wd4624 /permissive- /EHsc /Zc:preprocessor /utf-8)
-target_link_options(AerialClient PRIVATE /DEBUG)
+    /W4 /wd4100 /wd4201 /wd4624 /permissive- /EHsc /Zc:preprocessor /utf-8
+    /GR- /Gy /Gw)
+target_link_options(AerialClient PRIVATE
+    $<$<CONFIG:Debug>:/DEBUG>
+    $<$<CONFIG:Release>:/OPT:REF /OPT:ICF /OPT:LBR /INCREMENTAL:NO>)
 
 set_target_properties(AerialClient PROPERTIES
     OUTPUT_NAME "AerialClient"
     PREFIX ""
     SUFFIX ".dll")
+
+if(AERIAL_OBFUSCATE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR
+            "AERIAL_OBFUSCATE needs a Clang/clang-cl toolchain (e.g. Arkari); "
+            "current compiler is ${CMAKE_CXX_COMPILER_ID}. Configure with the 'obf' preset.")
+    endif()
+
+    set(AERIAL_OBF_FLAGS
+        -mllvm -irobf-fla     # control flow flattening
+        -mllvm -irobf-cse     # constant string encryption
+        -mllvm -irobf-cie     # constant integer encryption
+        -mllvm -irobf-cfe)    # constant float encryption
+
+    set(AERIAL_HOT_REGEX "/src/Render/|/src/Hooks/GameHooks\\.cpp$")
+
+    foreach(src IN LISTS AERIAL_SOURCES)
+        if(src MATCHES "\\.cpp$" AND NOT src MATCHES "${AERIAL_HOT_REGEX}")
+            set_source_files_properties(${src} PROPERTIES COMPILE_OPTIONS "${AERIAL_OBF_FLAGS}")
+        endif()
+    endforeach()
+
+    message(STATUS "AerialClient: obfuscation ON (render + GameHooks kept clean for FPS)")
+endif()
 
 add_subdirectory(injector)

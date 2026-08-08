@@ -9,6 +9,7 @@
 #include "Utils/Hook.h"
 #include "Utils/Logger.h"
 #include "Utils/Memory.h"
+#include "Utils/Obfusc.h"
 #include "Utils/ResourcePacks.h"
 
 namespace aerial::modules {
@@ -76,7 +77,9 @@ const hooks::Installer g_installer{"Skybox", &install};
 
 Skybox::Skybox()
     : Module("Skybox", "Draws the sky from your resource pack instead of the vanilla gradient",
-             Category::Visuals) {}
+             Category::Visuals),
+      m_patch(AERIAL_STR("0F 85 ? ? ? ? 48 8D 54 24 30 E8 ? ? ? ? 90 48 8B 5C 24 30"),
+              {0x90, 0x90, 0x90, 0x90, 0x90, 0x90}) {}
 
 std::string Skybox::suffix() const {
     if (!enabled())

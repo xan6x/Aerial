@@ -12,6 +12,7 @@
 #include "Utils/Hook.h"
 #include "Utils/Logger.h"
 #include "Utils/Memory.h"
+#include "Utils/Obfusc.h"
 
 namespace aerial::modules {
 namespace {
@@ -110,7 +111,8 @@ const hooks::Installer g_installer{"SelfNameTag", &install};
 }
 
 SelfNameTag::SelfNameTag()
-    : Module("SelfNameTag", "Draws your own nametag in third person", Category::Visuals) {
+    : Module("SelfNameTag", "Draws your own nametag in third person", Category::Visuals),
+      m_patch(BytePatch::nops(AERIAL_STR("48 3B DF 0F 84 4E 01 00 00"), 9)) {
     m_frontView = addBool("Front view", "Also draw it when the camera faces you", true);
 
     listen<Render2DEvent>(&SelfNameTag::onRender);

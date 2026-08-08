@@ -11,6 +11,7 @@
 #include <string>
 
 #include "Download.h"
+#include "Utils/Obfusc.h"
 
 namespace {
 
@@ -18,12 +19,6 @@ namespace net = aerial::net;
 
 constexpr wchar_t kProcessName[] = L"Minecraft.Windows.exe";
 constexpr wchar_t kDllName[] = L"AerialClient.dll";
-
-// The asset attached to the release tagged "latest". This form of the URL needs
-// no API call - it answers with a redirect to wherever the asset actually lives,
-// and it keeps pointing at the newest upload as long as the tag is moved.
-constexpr wchar_t kClientUrl[] =
-    L"https://github.com/xan6x/AerialClient/releases/download/latest/AerialClient.dll";
 
 void reportError(const std::wstring& what) {
     const DWORD code = GetLastError();
@@ -153,9 +148,12 @@ std::filesystem::path clientPath() {
 }
 
 bool fetchClient(const std::filesystem::path& destination) {
-    std::wcout << L"[*] downloading " << kClientUrl << L"\n";
+    const std::wstring url =
+        AERIAL_WSTR(L"https://github.com/xan6x/AerialClient/releases/download/latest/AerialClient.dll");
 
-    const auto response = net::get(kClientUrl);
+    std::wcout << L"[*] downloading " << url << L"\n";
+
+    const auto response = net::get(url);
     if (!response.ok) {
         std::wcerr << L"[-] download failed: " << response.error << L"\n";
         return false;
