@@ -23,6 +23,7 @@ void ModuleManager::registerAll() {
     add<modules::MotionBlur>();
     add<modules::NoDynamicFov>();
     add<modules::NoHurtCam>();
+    add<modules::NoRender>();
     add<modules::SelfNameTag>();
     add<modules::Skybox>();
     add<modules::Zoom>();

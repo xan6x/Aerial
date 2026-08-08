@@ -7,6 +7,7 @@
 #include "Module/Modules/MotionBlur.h"
 #include "Module/Modules/NoDynamicFov.h"
 #include "Module/Modules/NoHurtCam.h"
+#include "Module/Modules/NoRender.h"
 #include "Module/Modules/SelfNameTag.h"
 #include "Module/Modules/Skybox.h"
 #include "Module/Modules/Zoom.h"
