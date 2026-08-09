@@ -16,6 +16,7 @@
 #include "Module/Modules/SelfNameTag.h"
 #include "Module/Modules/Skybox.h"
 #include "Module/Modules/SwingAnimations.h"
+#include "Module/Modules/ViewModel.h"
 #include "Module/Modules/Zoom.h"
 
 #include "Module/Modules/ArrayList.h"

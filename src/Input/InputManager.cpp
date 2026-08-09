@@ -3,7 +3,10 @@
 #include <Windows.h>
 #include <TlHelp32.h>
 
+#include <cstdint>
+#include <mutex>
 #include <unordered_map>
+#include <vector>
 
 #include "Event/Events.h"
 #include "Module/ModuleManager.h"
@@ -31,7 +34,85 @@ bool ignoredKey(int key) {
     }
 }
 
+bool repeatableKey(int key) {
+    switch (key) {
+    case VK_RETURN:
+    case VK_ESCAPE:
+    case VK_TAB:
+    case VK_LEFT:
+    case VK_RIGHT:
+    case VK_UP:
+    case VK_DOWN:
+    case VK_HOME:
+    case VK_END:
+    case VK_PRIOR:
+    case VK_NEXT:
+    case VK_INSERT:
+    case VK_LBUTTON:
+    case VK_RBUTTON:
+    case VK_MBUTTON:
+        return false;
+    default:
+        return !ignoredKey(key);
+    }
+}
+
+constexpr uint64_t kRepeatDelayMs = 350;
+constexpr uint64_t kRepeatRateMs = 30;
+
 std::atomic<int> g_wheelNotches{0};
+
+std::mutex g_charMutex;
+std::vector<uint32_t> g_pendingChars;
+wchar_t g_highSurrogate = 0;
+std::atomic<bool> g_charInputWorks{false};
+
+std::string utf8Encode(uint32_t cp) {
+    std::string out;
+    if (cp < 0x80) {
+        out.push_back(static_cast<char>(cp));
+    } else if (cp < 0x800) {
+        out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp < 0x10000) {
+        out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+    return out;
+}
+
+void captureChar(wchar_t unit) {
+    g_charInputWorks.store(true, std::memory_order_relaxed);
+
+    uint32_t cp;
+    if (unit >= 0xD800 && unit <= 0xDBFF) {
+        g_highSurrogate = unit;
+        return;
+    }
+    if (unit >= 0xDC00 && unit <= 0xDFFF) {
+        if (!g_highSurrogate)
+            return;
+        cp = 0x10000u + ((static_cast<uint32_t>(g_highSurrogate) - 0xD800u) << 10) +
+             (static_cast<uint32_t>(unit) - 0xDC00u);
+        g_highSurrogate = 0;
+    } else {
+        g_highSurrogate = 0;
+        cp = static_cast<uint32_t>(unit);
+    }
+
+    if (cp != 0x08 && (cp < 0x20 || cp == 0x7F))
+        return;
+
+    std::lock_guard lock(g_charMutex);
+    if (g_pendingChars.size() < 256)
+        g_pendingChars.push_back(cp);
+}
 
 HHOOK g_wheelHook = nullptr;
 DWORD g_hookedThread = 0;
@@ -52,6 +133,9 @@ LRESULT CALLBACK messageProc(int code, WPARAM wParam, LPARAM lParam) {
         if (id == WM_INPUT || (id >= WM_MOUSEFIRST && id <= WM_MOUSELAST) ||
             (id >= 0x0240 && id <= 0x0250))
             g_lastPointerMessage.store(id, std::memory_order_relaxed);
+
+        if (id == WM_CHAR)
+            captureChar(static_cast<wchar_t>(message->wParam));
     }
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
@@ -189,6 +273,8 @@ void InputManager::sample() {
 void InputManager::poll() {
     m_polls.fetch_add(1, std::memory_order_relaxed);
 
+    const uint64_t now = GetTickCount64();
+
     POINT cursor{};
     if (GetCursorPos(&cursor) && platform::screenToGame(cursor)) {
         const float scale = render::DrawUtils::scale();
@@ -212,6 +298,19 @@ void InputManager::poll() {
         bus.dispatch(wheel);
     }
 
+    std::vector<uint32_t> chars;
+    {
+        std::lock_guard lock(g_charMutex);
+        chars.swap(g_pendingChars);
+    }
+    for (const uint32_t cp : chars) {
+        CharEvent character;
+        character.codepoint = cp;
+        if (cp != 0x08)
+            character.text = utf8Encode(cp);
+        bus.dispatch(character);
+    }
+
     for (int key = 1; key < kKeyCount; ++key) {
         const size_t index = static_cast<size_t>(key);
         if (m_down[index] == m_previous[index])
@@ -221,6 +320,16 @@ void InputManager::poll() {
         m_transitions.fetch_add(1, std::memory_order_relaxed);
         if (down)
             m_lastKey.store(key, std::memory_order_relaxed);
+
+        if (down) {
+            if (m_captured && repeatableKey(key)) {
+                m_repeatKey = key;
+                m_repeatStart = now;
+                m_repeatLast = now;
+            }
+        } else if (key == m_repeatKey) {
+            m_repeatKey = 0;
+        }
 
         if (key == VK_LBUTTON || key == VK_RBUTTON || key == VK_MBUTTON) {
             MouseEvent mouse;
@@ -244,6 +353,20 @@ void InputManager::poll() {
         if (down && !event.isCancelled() && !m_captured)
             ModuleManager::get().handleKey(key, true);
     }
+
+    if (m_repeatKey) {
+        if (!m_captured || !m_down[static_cast<size_t>(m_repeatKey)]) {
+            m_repeatKey = 0;
+        } else if (now - m_repeatStart >= kRepeatDelayMs && now - m_repeatLast >= kRepeatRateMs) {
+            m_repeatLast = now;
+
+            KeyEvent repeat;
+            repeat.key = m_repeatKey;
+            repeat.down = true;
+            repeat.repeat = true;
+            bus.dispatch(repeat);
+        }
+    }
 }
 
 bool InputManager::isDown(int virtualKey) const {
@@ -259,11 +382,16 @@ bool InputManager::wasPressed(int virtualKey) const {
     return m_down[index] && !m_previous[index];
 }
 
+bool InputManager::characterInputAvailable() {
+    return g_charInputWorks.load(std::memory_order_relaxed);
+}
+
 std::string InputManager::characterFor(int virtualKey) {
     if (virtualKey >= VK_NUMPAD0 && virtualKey <= VK_NUMPAD9)
         return std::string(1, static_cast<char>('0' + (virtualKey - VK_NUMPAD0)));
 
-    const HKL layout = GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), nullptr));
+    const DWORD gameThread = platform::gameWindowThread();
+    const HKL layout = GetKeyboardLayout(gameThread ? gameThread : GetCurrentThreadId());
 
     BYTE state[256]{};
     if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0)

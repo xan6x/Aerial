@@ -1,9 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "Module/Module.h"
-#include "Utils/Patch.h"
+
+namespace aerial {
+struct TickEvent;
+}
 
 namespace aerial::modules {
 
@@ -18,11 +22,11 @@ protected:
     void onDisable() override;
 
 private:
-
-    BytePatch m_patch;
+    void onTick(TickEvent& event);
 
     enum class Found { Nothing, Cubemap, EndSky };
     Found m_found = Found::Nothing;
+    uint32_t m_lastGeneration = 0;
 };
 
 }

@@ -31,6 +31,7 @@ void ModuleManager::registerAll() {
     add<modules::SelfNameTag>();
     add<modules::Skybox>();
     add<modules::SwingAnimations>();
+    add<modules::ViewModel>();
     add<modules::Zoom>();
 
     add<modules::ArrayList>();

@@ -22,6 +22,7 @@ public:
     void render(Render2DEvent& event);
     void onMouse(MouseEvent& event);
     void onKey(KeyEvent& event);
+    void onChar(CharEvent& event);
 
 private:
     ClickGui() = default;

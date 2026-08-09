@@ -22,6 +22,8 @@ private:
     BoolSetting* m_particles;
     BoolSetting* m_armor;
     BoolSetting* m_clouds;
+    BoolSetting* m_stars;
+    BoolSetting* m_sunMoon;
 
     BytePatch m_nameTagsPatch;
     BytePatch m_flamePatch;

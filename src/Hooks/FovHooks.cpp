@@ -22,6 +22,7 @@ std::array<std::atomic<float>, kSources> g_scales = {};
 
 std::atomic<float> g_lastFov{70.0f};
 std::atomic<float> g_lastPartialTicks{0.0f};
+std::atomic<float> g_itemFov{0.0f};
 
 float combined() {
     float scale = 1.0f;
@@ -31,7 +32,15 @@ float combined() {
 }
 
 float __fastcall onGetFov(void* self, float partialTicks, bool a3) {
-    const float fov = g_getFov.call(self, partialTicks, a3) * combined();
+    float base = g_getFov.call(self, partialTicks, a3);
+
+    if (!a3) {
+        const float itemFov = g_itemFov.load(std::memory_order_relaxed);
+        if (itemFov > 0.0f && base > 69.0f && base < 71.0f)
+            return itemFov;
+    }
+
+    const float fov = base * combined();
     g_lastFov.store(fov, std::memory_order_relaxed);
     g_lastPartialTicks.store(partialTicks, std::memory_order_relaxed);
     return fov;
@@ -53,6 +62,8 @@ const Installer g_installer{"Fov", &install};
 void setFovScale(Fov source, float multiplier) {
     g_scales[static_cast<size_t>(source)].store(multiplier, std::memory_order_relaxed);
 }
+
+void setItemFov(float fov) { g_itemFov.store(fov, std::memory_order_relaxed); }
 
 float currentFov() { return g_lastFov.load(std::memory_order_relaxed); }
 

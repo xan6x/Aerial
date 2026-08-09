@@ -36,6 +36,8 @@ public:
 
     static std::string characterFor(int virtualKey);
 
+    static bool characterInputAvailable();
+
     struct Stats {
         uint64_t samples = 0;
         uint64_t polls = 0;
@@ -63,6 +65,10 @@ private:
     KeyState m_previous{};
     Vec2 m_cursor;
     bool m_captured = false;
+
+    int m_repeatKey = 0;
+    uint64_t m_repeatStart = 0;
+    uint64_t m_repeatLast = 0;
 
     std::atomic<uint64_t> m_samples{0};
     std::atomic<uint64_t> m_polls{0};

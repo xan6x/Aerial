@@ -1,7 +1,9 @@
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 
 #include "Hooks/HookRegistry.h"
+#include "Hooks/ResourceHooks.h"
 #include "Render/SkyCubemap.h"
 #include "SDK/Offsets.h"
 #include "Utils/Hook.h"
@@ -23,6 +25,7 @@ Detour<void(__fastcall*)(void*, void*, void*, void*, char, char)> g_uploadTextur
 std::atomic<bool> g_rebuildPending{false};
 std::atomic<Clock::time_point> g_packsChangedAt{};
 std::atomic<Clock::time_point> g_lastUpload{};
+std::atomic<uint32_t> g_generation{0};
 
 constexpr auto kSettleGap = std::chrono::milliseconds(750);
 constexpr auto kMinDelay = std::chrono::milliseconds(500);
@@ -66,6 +69,7 @@ void __fastcall onPacksChanged(void* self, void* a2, char a3, void* a4) {
 
     LOG_INFO("Resources", "the active packs changed; dropping our cached textures");
     render::SkyCubemap::get().unload();
+    g_generation.fetch_add(1, std::memory_order_relaxed);
 
     const auto now = Clock::now();
     g_packsChangedAt.store(now, std::memory_order_relaxed);
@@ -91,4 +95,7 @@ bool install() {
 const Installer g_installer{"Resources", &install};
 
 }
+
+uint32_t resourcesGeneration() { return g_generation.load(std::memory_order_relaxed); }
+
 }

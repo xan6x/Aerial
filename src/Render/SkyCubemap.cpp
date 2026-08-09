@@ -121,10 +121,19 @@ bool SkyCubemap::load() {
         ctor(slot, group, &location, 0);
     }
 
+    m_group = group;
     m_ready = true;
     m_status = "ready";
     LOG_INFO("Skybox", "six cubemap faces resolved through the game's texture group");
     return true;
+}
+
+bool SkyCubemap::refresh() {
+    if (m_ready && m_group == textureGroup())
+        return true;
+
+    unload();
+    return load();
 }
 
 void SkyCubemap::unload() {
@@ -132,6 +141,7 @@ void SkyCubemap::unload() {
     m_faces.clear();
     m_faces.shrink_to_fit();
     m_ready = false;
+    m_group = nullptr;
     m_status = "not loaded";
 }
 

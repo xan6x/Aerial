@@ -17,6 +17,7 @@ ClickGuiModule::ClickGuiModule()
     listenAlways<Render2DEvent>(&ClickGuiModule::onRender, kPriorityHighest);
     listenAlways<MouseEvent>(&ClickGuiModule::onMouse, kPriorityHighest);
     listenAlways<KeyEvent>(&ClickGuiModule::onKey, kPriorityHighest);
+    listenAlways<CharEvent>(&ClickGuiModule::onChar, kPriorityHighest);
 }
 
 void ClickGuiModule::onEnable() { gui::ClickGui::get().open(); }
@@ -34,5 +35,7 @@ void ClickGuiModule::onRender(Render2DEvent& event) {
 void ClickGuiModule::onMouse(MouseEvent& event) { gui::ClickGui::get().onMouse(event); }
 
 void ClickGuiModule::onKey(KeyEvent& event) { gui::ClickGui::get().onKey(event); }
+
+void ClickGuiModule::onChar(CharEvent& event) { gui::ClickGui::get().onChar(event); }
 
 }

@@ -10,6 +10,8 @@ enum class Fov {
 
 void setFovScale(Fov source, float multiplier);
 
+void setItemFov(float fov);
+
 float currentFov();
 
 float currentPartialTicks();

@@ -4,6 +4,7 @@
 
 namespace aerial {
 struct KeyEvent;
+struct CharEvent;
 struct MouseEvent;
 struct Render2DEvent;
 }
@@ -25,6 +26,7 @@ private:
     void onRender(Render2DEvent& event);
     void onMouse(MouseEvent& event);
     void onKey(KeyEvent& event);
+    void onChar(CharEvent& event);
 
     EnumSetting* m_character;
     FloatSetting* m_characterOpacity;

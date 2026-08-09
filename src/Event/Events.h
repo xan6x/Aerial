@@ -69,6 +69,11 @@ struct KeyEvent : Event {
     bool repeat = false;
 };
 
+struct CharEvent : Event {
+    unsigned int codepoint = 0;
+    std::string text;
+};
+
 struct MouseEvent : Event {
     enum class Button { Left, Right, Middle, ScrollUp, ScrollDown };
 

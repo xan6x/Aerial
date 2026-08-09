@@ -189,6 +189,7 @@ inline constexpr uintptr_t LevelRenderer_tick          = 0x5B4AD0;
 
 inline constexpr uintptr_t Matrix_translate            = 0x15D390;
 
+inline constexpr uintptr_t ItemInHandRenderer_render   = 0x5A11F0;
 inline constexpr uintptr_t ItemRenderer_render         = 0x56FCC0;
 inline constexpr uintptr_t ItemRenderer_translateReturn = 0x56FE83;
 
@@ -220,6 +221,7 @@ inline constexpr size_t kTexturePtrSize = 0x58;
 
 inline constexpr uintptr_t g_tessellator = 0x1925550;
 inline constexpr uintptr_t g_skyMatrixStack = 0x192AED0;
+inline constexpr uintptr_t g_skyColour = 0x192AE08;
 
 inline constexpr float kSkyCubeScale = -2000.0f;
 

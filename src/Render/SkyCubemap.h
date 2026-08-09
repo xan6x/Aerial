@@ -12,6 +12,8 @@ public:
 
     bool load();
 
+    bool refresh();
+
     void unload();
 
     bool ready() const { return m_ready; }
@@ -31,6 +33,7 @@ private:
     bool m_drewOnce = false;
     const char* m_status = "not loaded";
 
+    void* m_group = nullptr;
     std::vector<uint8_t> m_faces;
 };
 

@@ -1632,9 +1632,47 @@ void ClickGui::popCharacter(std::string& text) {
     text.erase(last);
 }
 
+void ClickGui::onChar(CharEvent& event) {
+    if (!m_open)
+        return;
+
+    std::string* buffer = nullptr;
+    size_t cap = 0;
+    if (m_searching) {
+        buffer = &m_search;
+        cap = 24;
+    } else if (m_editingName) {
+        buffer = &m_nameBuffer;
+        cap = 32;
+    } else if (m_editingText) {
+        buffer = &m_textBuffer;
+        cap = 240;
+    } else {
+        return;
+    }
+
+    event.cancel();
+
+    if (event.codepoint == 0x08) {
+        popCharacter(*buffer);
+        if (m_searching)
+            m_moduleScroll.reset();
+        return;
+    }
+
+    if (event.text.empty() || buffer->size() + event.text.size() > cap)
+        return;
+
+    *buffer += event.text;
+    if (m_searching)
+        m_moduleScroll.reset();
+}
+
 void ClickGui::onKey(KeyEvent& event) {
     if (!m_open || !event.down)
         return;
+
+    const bool useKeyChars = !input::InputManager::characterInputAvailable();
 
     if (m_searching) {
         event.cancel();
@@ -1654,8 +1692,8 @@ void ClickGui::onKey(KeyEvent& event) {
             return;
 
         case VK_BACK:
-            if (!m_search.empty()) {
-                m_search.pop_back();
+            if (useKeyChars && !m_search.empty()) {
+                popCharacter(m_search);
                 m_moduleScroll.reset();
             }
             return;
@@ -1664,7 +1702,7 @@ void ClickGui::onKey(KeyEvent& event) {
             break;
         }
 
-        if (m_search.size() < 24) {
+        if (useKeyChars && m_search.size() < 24) {
             const std::string typed = input::InputManager::characterFor(event.key);
             if (!typed.empty()) {
                 m_search += typed;
@@ -1701,15 +1739,15 @@ void ClickGui::onKey(KeyEvent& event) {
         }
 
         case VK_BACK:
-            if (!m_nameBuffer.empty())
-                m_nameBuffer.pop_back();
+            if (useKeyChars && !m_nameBuffer.empty())
+                popCharacter(m_nameBuffer);
             return;
 
         default:
             break;
         }
 
-        if (m_nameBuffer.size() < 32)
+        if (useKeyChars && m_nameBuffer.size() < 32)
             m_nameBuffer += input::InputManager::characterFor(event.key);
         return;
     }
@@ -1740,14 +1778,15 @@ void ClickGui::onKey(KeyEvent& event) {
         }
 
         case VK_BACK:
-            popCharacter(m_textBuffer);
+            if (useKeyChars)
+                popCharacter(m_textBuffer);
             return;
 
         default:
             break;
         }
 
-        if (m_textBuffer.size() < 240)
+        if (useKeyChars && m_textBuffer.size() < 240)
             m_textBuffer += input::InputManager::characterFor(event.key);
         return;
     }
