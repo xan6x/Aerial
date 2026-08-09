@@ -220,6 +220,8 @@ inline constexpr float kPackCubeScale = 800.0f;
 
 inline constexpr uintptr_t LevelRendererCamera_setupFog = 0x5AFE00;
 
+inline constexpr uintptr_t EntityShaderManager_getOverlayColor = 0x5CA640;  // (this, Vec4* out, entity)
+
 inline constexpr uintptr_t EntityRenderer_renderText    = 0x561E70;  // (renderer, entity, std::string*, f partialTicks)
 inline constexpr uintptr_t EntityRenderer_getOffset     = 0x562050;  // (renderer, Vec3* out) -> out; the world render origin
 

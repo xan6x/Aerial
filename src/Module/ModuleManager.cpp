@@ -22,6 +22,7 @@ void ModuleManager::registerAll() {
     add<modules::FreeLook>();
     add<modules::FullBright>();
     add<modules::Hitboxes>();
+    add<modules::HurtColor>();
     add<modules::ItemPhysics>();
     add<modules::JavaFov>();
     add<modules::MotionBlur>();

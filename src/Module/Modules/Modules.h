@@ -6,6 +6,7 @@
 #include "Module/Modules/FreeLook.h"
 #include "Module/Modules/FullBright.h"
 #include "Module/Modules/Hitboxes.h"
+#include "Module/Modules/HurtColor.h"
 #include "Module/Modules/ItemPhysics.h"
 #include "Module/Modules/JavaFov.h"
 #include "Module/Modules/MotionBlur.h"
