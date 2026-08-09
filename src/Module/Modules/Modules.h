@@ -25,6 +25,7 @@
 #include "Module/Modules/Aliases.h"
 #include "Module/Modules/AutoSprint.h"
 #include "Module/Modules/DiagonalSprint.h"
+#include "Module/Modules/FastRefill.h"
 #include "Module/Modules/ItemDelayFix.h"
 #include "Module/Modules/JavaHotkeys.h"
 #include "Module/Modules/NoCamReset.h"

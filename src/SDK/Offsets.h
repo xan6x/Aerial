@@ -16,6 +16,12 @@ inline constexpr uintptr_t PlayerInventoryProxy_selectSlot = 0xA4EA30;
 inline constexpr uintptr_t HudScreenController_tick = 0x248F70;  // (this) -> dirty flag
 inline constexpr uintptr_t ContainerScreenController_tick = 0x207BC0;
 inline constexpr uintptr_t ContainerScreenController_handleTakePlace = 0x207F10;
+inline constexpr uintptr_t ContainerScreenController_handleAutoPlace = 0x208000;
+inline constexpr uintptr_t ContainerScreenController_quickMoveHovered = 0x208800;
+inline constexpr uintptr_t ContainerScreenController_cursorHasItem = 0x208910;
+inline constexpr uintptr_t ContainerScreenController_onSlotPressed = 0x20B920;
+inline constexpr uintptr_t ContainerScreenController_onSlotSelected = 0x20B500;  // (this, ptr, slot, flags); flags==0 is hover
+inline constexpr uintptr_t ContainerManagerController_getItemInstance = 0x8F9EF0;
 inline constexpr uintptr_t ContainerScreenController_onSlotHovered = 0x20B920;
 inline constexpr uintptr_t ContainerScreenController_getCollectionIndex = 0x20B2E0;
 inline constexpr uintptr_t Json_Value_find = 0xC9E3D0;

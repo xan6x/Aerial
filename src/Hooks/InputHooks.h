@@ -10,6 +10,8 @@ void* containerController();
 
 void requestFreshSelect();
 
+void freshSelectNow();
+
 int hoveredSlot(std::string& collection);
 
 void replayDeferredGrab();

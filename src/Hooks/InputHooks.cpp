@@ -43,6 +43,7 @@ void* g_containerController = nullptr;
 std::atomic<Clock::time_point> g_containerTickAt{};
 
 std::atomic<bool> g_freshSelect{false};
+std::atomic<void*> g_hudController{nullptr};
 
 void* g_moveInputHandler = nullptr;
 
@@ -124,6 +125,7 @@ void __fastcall onContainerTick(void* self) {
 
 uintptr_t __fastcall onHudTick(void* self) {
     namespace hud = offsets::field::hudScreenController;
+    g_hudController.store(self, std::memory_order_relaxed);
     if (g_freshSelect.exchange(false, std::memory_order_relaxed) && self &&
         memory::isReadable(self, hud::freshSelectFlag + sizeof(int32_t)))
         *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(self) + hud::freshSelectFlag) = 0;
@@ -230,6 +232,13 @@ void* containerController() {
 }
 
 void requestFreshSelect() { g_freshSelect.store(true, std::memory_order_relaxed); }
+
+void freshSelectNow() {
+    namespace hud = offsets::field::hudScreenController;
+    void* controller = g_hudController.load(std::memory_order_relaxed);
+    if (controller && memory::isReadable(controller, hud::freshSelectFlag + sizeof(int32_t)))
+        *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(controller) + hud::freshSelectFlag) = 0;
+}
 
 int hoveredSlot(std::string& collection) {
     collection = g_hoveredCollection;
