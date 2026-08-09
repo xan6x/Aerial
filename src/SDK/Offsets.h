@@ -64,6 +64,7 @@ inline constexpr uintptr_t Entity_getEntityTypeId       = 0x4A6710;  // Player o
 inline constexpr uintptr_t Mob_normalTick               = 0xA19E20;
 inline constexpr uintptr_t Mob_aiStep                   = 0xA1F050;
 inline constexpr uintptr_t Mob_swing                    = 0xA20E70;
+inline constexpr uintptr_t Mob_getCurrentSwingDuration  = 0xA20D20;
 inline constexpr uintptr_t Mob_setSprinting             = 0xA20730;
 inline constexpr uintptr_t Mob_setSneaking              = 0xA20EF0;
 inline constexpr uintptr_t Mob_isGliding                = 0xA206D0;
