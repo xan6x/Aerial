@@ -167,12 +167,16 @@ inline constexpr uintptr_t Options_getFloat            = 0x495600;
 inline constexpr uintptr_t Options_getGamma            = 0x4885C0;
 
 inline constexpr uintptr_t Options_getPlayerViewPerspective = 0x488420;
+inline constexpr uintptr_t Options_setPlayerViewPerspective = 0x4883A0;
+inline constexpr uintptr_t MinecraftGame_getOptions         = 0x137BD0;
 
 inline constexpr uintptr_t LevelRendererPlayer_getFov  = 0x5B6830;
 
 inline constexpr uintptr_t Matrix_perspective = 0x349A40;
 inline constexpr uintptr_t LevelRendererPlayer_setupCameraPerspReturn = 0x5BA3F2;
 inline constexpr uintptr_t InGamePlayScreen_itemInHandPerspReturn = 0x356C61;
+
+inline constexpr uintptr_t LevelRendererPlayer_moveCameraToPlayer = 0x5BA7E0;
 
 inline constexpr uintptr_t LevelRenderer_tick          = 0x5B4AD0;
 

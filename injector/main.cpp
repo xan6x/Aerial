@@ -149,7 +149,7 @@ std::filesystem::path clientPath() {
 
 bool fetchClient(const std::filesystem::path& destination) {
     const std::wstring url =
-        AERIAL_WSTR(L"https://github.com/xan6x/AerialClient/releases/download/latest/AerialClient.dll");
+        AERIAL_WSTR(L"https://github.com/xan6x/AerialClient/releases/latest/download/AerialClient.dll");
 
     std::wcout << L"[*] downloading " << url << L"\n";
 

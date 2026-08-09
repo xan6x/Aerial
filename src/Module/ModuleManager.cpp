@@ -18,6 +18,7 @@ void ModuleManager::registerAll() {
 
     add<modules::AspectRatio>();
     add<modules::FogColor>();
+    add<modules::FreeLook>();
     add<modules::FullBright>();
     add<modules::ItemPhysics>();
     add<modules::JavaFov>();
