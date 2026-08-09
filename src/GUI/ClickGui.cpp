@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <format>
 
 #include "Assets/Resources.h"
@@ -43,6 +44,34 @@ constexpr float kContentDelay = 0.18f;
 
 const Category kCategories[] = {Category::Visuals, Category::Interface, Category::Input,
                                 Category::Client};
+
+constexpr float kPickerSV = 96.0f;
+constexpr float kPickerBar = 12.0f;
+constexpr float kPickerGap = 6.0f;
+
+float colourPickerHeight(float scale) {
+    return (4.0f + kPickerSV + kPickerGap + kPickerBar + kPickerGap + kPickerBar + 6.0f) * scale;
+}
+
+void rgbToHsv(const Colour& c, float& h, float& s, float& v) {
+    const float mx = std::max({c.r, c.g, c.b});
+    const float mn = std::min({c.r, c.g, c.b});
+    const float d = mx - mn;
+    v = mx;
+    s = mx <= 0.0f ? 0.0f : d / mx;
+    if (d <= 1e-6f) {
+        h = 0.0f;
+        return;
+    }
+    if (mx == c.r)
+        h = 60.0f * std::fmod((c.g - c.b) / d, 6.0f);
+    else if (mx == c.g)
+        h = 60.0f * ((c.b - c.r) / d + 2.0f);
+    else
+        h = 60.0f * ((c.r - c.g) / d + 4.0f);
+    if (h < 0.0f)
+        h += 360.0f;
+}
 
 std::string formatValue(const Setting& setting) {
     if (setting.type() == Setting::Type::Float) {
@@ -179,6 +208,8 @@ void ClickGui::close() {
 
     m_open = false;
     m_draggingSlider = nullptr;
+    m_draggingColour = 0;
+    m_openColour = nullptr;
     m_bindingModule = nullptr;
     m_editingName = false;
     m_searching = false;
@@ -290,6 +321,13 @@ void ClickGui::render(Render2DEvent& event) {
             dragSliderTo(m_cursor.x);
         else
             m_draggingSlider = nullptr;
+    }
+
+    if (m_draggingColour) {
+        if (input::InputManager::get().isDown(VK_LBUTTON))
+            updateColourDrag(m_cursor);
+        else
+            m_draggingColour = 0;
     }
 
     renderTooltip(event.screenSize, layout.scale);
@@ -575,8 +613,11 @@ void ClickGui::renderCards(const Layout& layout, float amount) {
         float settingsHeight = 0.0f;
         if (expanded) {
             for (const auto& setting : module->settings()) {
-                if (setting->visible())
-                    settingsHeight += settingHeightFor(*setting, scale);
+                if (!setting->visible())
+                    continue;
+                settingsHeight += settingHeightFor(*setting, scale);
+                if (setting.get() == static_cast<Setting*>(m_openColour))
+                    settingsHeight += colourPickerHeight(scale);
             }
             if (settingsHeight > 0.0f)
                 settingsHeight += 8.0f * scale;
@@ -894,8 +935,13 @@ float ClickGui::renderSetting(Setting& setting, Module& module, const Rect& row,
     }
     }
 
+    float extra = 0.0f;
+    if (setting.type() == Setting::Type::Colour &&
+        &setting == static_cast<Setting*>(m_openColour))
+        extra = renderColourPicker(static_cast<ColourSetting&>(setting), row, scale);
+
     m_hits.push_back({row, HitKind::Setting, &module, &setting, m_category, {}, track, grab});
-    return row.height();
+    return row.height() + extra;
 }
 
 bool ClickGui::renderButton(const Rect& area, const std::string& label, float scale,
@@ -1106,12 +1152,15 @@ void ClickGui::onMouse(MouseEvent& event) {
     if (event.button == MouseEvent::Button::ScrollUp ||
         event.button == MouseEvent::Button::ScrollDown) {
 
-        activeScroll().nudge(-event.wheel * 3.0f * cardHeightFor(DrawUtils::uiScale()));
+        const float step = settingHeightFor(DrawUtils::uiScale());
+        const float notches = std::clamp(event.wheel, -3.0f, 3.0f);
+        activeScroll().nudge(-notches * step);
         return;
     }
 
     if (event.button == MouseEvent::Button::Left && !event.down) {
         m_draggingSlider = nullptr;
+        m_draggingColour = 0;
         return;
     }
     if (!event.down)
@@ -1170,6 +1219,21 @@ void ClickGui::handleClick(const Vec2& cursor, bool right) {
                 keepText = it->setting->type() == Setting::Type::Text;
                 applySettingClick(*it, cursor, right);
             }
+            break;
+
+        case HitKind::ColourSV:
+            m_draggingColour = 1;
+            updateColourDrag(cursor);
+            break;
+
+        case HitKind::ColourHue:
+            m_draggingColour = 2;
+            updateColourDrag(cursor);
+            break;
+
+        case HitKind::ColourAlpha:
+            m_draggingColour = 3;
+            updateColourDrag(cursor);
             break;
 
         case HitKind::ListCell: {
@@ -1336,8 +1400,98 @@ void ClickGui::applySettingClick(const Hit& hit, const Vec2& cursor, bool right)
         break;
 
     case Setting::Type::Colour:
+        if (m_openColour == &static_cast<ColourSetting&>(setting))
+            m_openColour = nullptr;
+        else
+            openColourPicker(static_cast<ColourSetting&>(setting));
         break;
     }
+}
+
+void ClickGui::openColourPicker(ColourSetting& setting) {
+    m_openColour = &setting;
+    rgbToHsv(setting.value, m_pickerHue, m_pickerSat, m_pickerVal);
+    m_pickerAlpha = setting.value.a;
+}
+
+void ClickGui::commitPickerColour() {
+    if (!m_openColour)
+        return;
+    m_openColour->value = Colour::hsv(m_pickerHue, m_pickerSat, m_pickerVal, m_pickerAlpha);
+}
+
+void ClickGui::updateColourDrag(const Vec2& cursor) {
+    if (m_draggingColour == 1) {
+        const Rect& sv = m_colourSVRect;
+        m_pickerSat = std::clamp((cursor.x - sv.left) / std::max(1.0f, sv.width()), 0.0f, 1.0f);
+        m_pickerVal =
+            std::clamp(1.0f - (cursor.y - sv.top) / std::max(1.0f, sv.height()), 0.0f, 1.0f);
+    } else if (m_draggingColour == 2) {
+        const Rect& hue = m_colourHueRect;
+        m_pickerHue = std::clamp((cursor.x - hue.left) / std::max(1.0f, hue.width()), 0.0f, 1.0f) *
+                      360.0f;
+    } else if (m_draggingColour == 3) {
+        const Rect& alpha = m_colourAlphaRect;
+        m_pickerAlpha = std::clamp((cursor.x - alpha.left) / std::max(1.0f, alpha.width()), 0.0f, 1.0f);
+    } else {
+        return;
+    }
+    commitPickerColour();
+}
+
+float ClickGui::renderColourPicker(ColourSetting& setting, const Rect& row, float scale) {
+    const float pad = kPadding * scale;
+    const float gap = kPickerGap * scale;
+    const float top = row.bottom + 4.0f * scale;
+    const float left = row.left + pad;
+    const float right = row.right - pad;
+
+    const Rect sv{left, top, right, top + kPickerSV * scale};
+    const Rect hue{left, sv.bottom + gap, right, sv.bottom + gap + kPickerBar * scale};
+    const Rect alpha{left, hue.bottom + gap, right, hue.bottom + gap + kPickerBar * scale};
+
+    m_colourSVRect = sv;
+    m_colourHueRect = hue;
+    m_colourAlphaRect = alpha;
+
+    const float radius = 5.0f * scale;
+
+    DrawUtils::fill(sv, Colour::hsv(m_pickerHue, 1.0f, 1.0f), radius);
+    DrawUtils::gradient(sv, Colour::rgb(0xFFFFFF, 1.0f), Colour::rgb(0xFFFFFF, 0.0f), false, radius);
+    DrawUtils::gradient(sv, Colour::rgb(0x000000, 0.0f), Colour::rgb(0x000000, 1.0f), true, radius);
+    DrawUtils::outline(sv, Colour::rgb(0xFFFFFF, 0.15f), 1.0f * scale, radius);
+
+    const float mx = sv.left + std::clamp(m_pickerSat, 0.0f, 1.0f) * sv.width();
+    const float my = sv.top + (1.0f - std::clamp(m_pickerVal, 0.0f, 1.0f)) * sv.height();
+    const float mr = 4.0f * scale;
+    DrawUtils::outline({mx - mr, my - mr, mx + mr, my + mr}, Colour::rgb(0xFFFFFF, 0.95f), 1.5f * scale,
+                       mr);
+
+    const float segW = hue.width() / 6.0f;
+    for (int i = 0; i < 6; ++i) {
+        const Rect seg{hue.left + segW * static_cast<float>(i), hue.top,
+                       hue.left + segW * static_cast<float>(i + 1), hue.bottom};
+        DrawUtils::gradient(seg, Colour::hsv(static_cast<float>(i) * 60.0f, 1.0f, 1.0f),
+                            Colour::hsv(static_cast<float>(i + 1) * 60.0f, 1.0f, 1.0f), false, 0.0f);
+    }
+    DrawUtils::outline(hue, Colour::rgb(0xFFFFFF, 0.15f), 1.0f * scale, hue.height() * 0.5f);
+    const float hx = hue.left + (m_pickerHue / 360.0f) * hue.width();
+    DrawUtils::fill({hx - 1.5f * scale, hue.top - 2.0f * scale, hx + 1.5f * scale, hue.bottom + 2.0f * scale},
+                    Colour::rgb(0xFFFFFF, 0.95f), 1.5f * scale);
+
+    const Colour full = Colour::hsv(m_pickerHue, m_pickerSat, m_pickerVal, 1.0f);
+    DrawUtils::gradient(alpha, full.withAlpha(0.0f), full.withAlpha(1.0f), false, alpha.height() * 0.5f);
+    DrawUtils::outline(alpha, Colour::rgb(0xFFFFFF, 0.15f), 1.0f * scale, alpha.height() * 0.5f);
+    const float ax = alpha.left + std::clamp(m_pickerAlpha, 0.0f, 1.0f) * alpha.width();
+    DrawUtils::fill({ax - 1.5f * scale, alpha.top - 2.0f * scale, ax + 1.5f * scale,
+                     alpha.bottom + 2.0f * scale},
+                    Colour::rgb(0xFFFFFF, 0.95f), 1.5f * scale);
+
+    m_hits.push_back({sv, HitKind::ColourSV, nullptr, &setting, m_category, {}});
+    m_hits.push_back({hue, HitKind::ColourHue, nullptr, &setting, m_category, {}});
+    m_hits.push_back({alpha, HitKind::ColourAlpha, nullptr, &setting, m_category, {}});
+
+    return colourPickerHeight(scale);
 }
 
 float ClickGui::renderList(ListSetting& list, Module& module, const Rect& header, float scale) {
@@ -1607,7 +1761,7 @@ void ClickGui::onKey(KeyEvent& event) {
     }
 
     ScrollState& scroll = activeScroll();
-    const float page = std::max(1.0f, DrawUtils::screenSize().y * 0.45f);
+    const float page = settingHeightFor(DrawUtils::uiScale()) * 6.0f;
 
     switch (event.key) {
     case VK_PRIOR:

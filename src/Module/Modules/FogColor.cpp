@@ -68,16 +68,12 @@ FogColor::FogColor() : Module("FogColor", "Recolours the world's fog", Category:
     for (const Preset& preset : kPresets)
         names.emplace_back(preset.name);
 
-    m_preset = addEnum("Preset", "Pick a colour, or Custom to use the sliders", std::move(names), 1);
+    m_preset = addEnum("Preset", "Pick a colour, or Custom to use the picker", std::move(names), 1);
 
-    m_red = addFloat("Red", "Red channel", 0.48f, 0.0f, 1.0f, 0.01f);
-    m_green = addFloat("Green", "Green channel", 0.29f, 0.0f, 1.0f, 0.01f);
-    m_blue = addFloat("Blue", "Blue channel", 0.85f, 0.0f, 1.0f, 0.01f);
+    m_custom = addColour("Colour", "Custom fog colour", Colour(0.48f, 0.29f, 0.85f));
 
     const auto custom = [this] { return m_preset->is("Custom") && !m_rainbow->value; };
-    m_red->onlyIf(custom);
-    m_green->onlyIf(custom);
-    m_blue->onlyIf(custom);
+    m_custom->onlyIf(custom);
 
     m_rainbow = addBool("Rainbow", "Cycle through the hues", false);
     m_rainbowSpeed = addFloat("Speed", "Degrees of hue per second", 30.0f, 5.0f, 180.0f, 5.0f);
@@ -96,7 +92,7 @@ void FogColor::onRender(Render2DEvent& event) {
         const float hue = std::fmod(gui::clockSeconds() * m_rainbowSpeed->value, 360.0f);
         colour = Colour::hsv(hue, 0.65f, 0.85f);
     } else if (m_preset->is("Custom")) {
-        colour = {m_red->value, m_green->value, m_blue->value};
+        colour = m_custom->value;
     } else {
         colour = kPresets[static_cast<size_t>(m_preset->value)].colour;
     }

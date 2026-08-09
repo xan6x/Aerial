@@ -20,6 +20,9 @@ Detour<float(__fastcall*)(void*, float, bool)> g_getFov;
 
 std::array<std::atomic<float>, kSources> g_scales = {};
 
+std::atomic<float> g_lastFov{70.0f};
+std::atomic<float> g_lastPartialTicks{0.0f};
+
 float combined() {
     float scale = 1.0f;
     for (auto& source : g_scales)
@@ -28,7 +31,10 @@ float combined() {
 }
 
 float __fastcall onGetFov(void* self, float partialTicks, bool a3) {
-    return g_getFov.call(self, partialTicks, a3) * combined();
+    const float fov = g_getFov.call(self, partialTicks, a3) * combined();
+    g_lastFov.store(fov, std::memory_order_relaxed);
+    g_lastPartialTicks.store(partialTicks, std::memory_order_relaxed);
+    return fov;
 }
 
 bool install() {
@@ -47,5 +53,9 @@ const Installer g_installer{"Fov", &install};
 void setFovScale(Fov source, float multiplier) {
     g_scales[static_cast<size_t>(source)].store(multiplier, std::memory_order_relaxed);
 }
+
+float currentFov() { return g_lastFov.load(std::memory_order_relaxed); }
+
+float currentPartialTicks() { return g_lastPartialTicks.load(std::memory_order_relaxed); }
 
 }

@@ -100,6 +100,9 @@ private:
         ListCell,
         ListRemove,
         ListAdd,
+        ColourSV,
+        ColourHue,
+        ColourAlpha,
     };
 
     struct Hit {
@@ -119,6 +122,11 @@ private:
     std::vector<Hit> m_hits;
 
     void applySettingClick(const Hit& hit, const Vec2& cursor, bool right);
+
+    void openColourPicker(ColourSetting& setting);
+    void updateColourDrag(const Vec2& cursor);
+    void commitPickerColour();
+    float renderColourPicker(ColourSetting& setting, const Rect& row, float scale);
 
     enum class Page { Modules, Configs };
     Page m_page = Page::Modules;
@@ -145,6 +153,16 @@ private:
     int m_editingIndex = -1;
     int m_editingSide = 0;
     std::string m_textBuffer;
+
+    ColourSetting* m_openColour = nullptr;
+    int m_draggingColour = 0;
+    float m_pickerHue = 0.0f;
+    float m_pickerSat = 0.0f;
+    float m_pickerVal = 0.0f;
+    float m_pickerAlpha = 1.0f;
+    Rect m_colourSVRect;
+    Rect m_colourHueRect;
+    Rect m_colourAlphaRect;
 
     float m_transition = 0.0f;
 

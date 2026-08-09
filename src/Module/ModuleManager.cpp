@@ -17,9 +17,11 @@ void ModuleManager::registerAll() {
         return;
 
     add<modules::AspectRatio>();
+    add<modules::ChunkBorder>();
     add<modules::FogColor>();
     add<modules::FreeLook>();
     add<modules::FullBright>();
+    add<modules::Hitboxes>();
     add<modules::ItemPhysics>();
     add<modules::JavaFov>();
     add<modules::MotionBlur>();

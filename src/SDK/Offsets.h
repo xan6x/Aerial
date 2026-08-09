@@ -389,6 +389,10 @@ inline constexpr ptrdiff_t velocity      = 0xAC;   // Vec3, verified
 inline constexpr ptrdiff_t rot           = 0xB8;   // Vec2 {pitch, yaw}, verified
 inline constexpr ptrdiff_t rotOld        = 0xC0;   // Vec2
 
+inline constexpr ptrdiff_t aabbMin       = 0x160;  // Vec3, world AABB min, built by Entity::setPos
+inline constexpr ptrdiff_t aabbMax       = 0x16C;  // Vec3, world AABB max
+inline constexpr ptrdiff_t hitboxWidth   = 0x198;  // float, full width
+
 inline constexpr ptrdiff_t onGround      = 0x12E;  // bool, verified
 
 inline constexpr ptrdiff_t rendererId    = 0x14C;  // int

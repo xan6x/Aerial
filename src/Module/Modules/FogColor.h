@@ -19,9 +19,7 @@ private:
     void onRender(Render2DEvent& event);
 
     EnumSetting* m_preset;
-    FloatSetting* m_red;
-    FloatSetting* m_green;
-    FloatSetting* m_blue;
+    ColourSetting* m_custom;
     BoolSetting* m_rainbow;
     FloatSetting* m_rainbowSpeed;
 };

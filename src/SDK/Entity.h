@@ -26,6 +26,16 @@ public:
     const Vec2& rot() const { return fieldAt<Vec2>(this, ef::rot); }
     Vec2& rotOld() { return fieldAt<Vec2>(this, ef::rotOld); }
 
+    AABB worldAABB() const {
+        return {fieldAt<Vec3>(this, ef::aabbMin), fieldAt<Vec3>(this, ef::aabbMax)};
+    }
+
+    Vec3 renderPos(float partialTicks) {
+        Vec3 out;
+        callVirtual<void>(this, ev::getPosExtrapolated, &out, partialTicks);
+        return out;
+    }
+
     float pitch() const { return rot().x; }
     float yaw() const { return rot().y; }
 
