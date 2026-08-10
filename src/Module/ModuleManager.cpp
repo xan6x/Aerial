@@ -24,6 +24,7 @@ void ModuleManager::registerAll() {
     add<modules::HurtColor>();
     add<modules::ItemPhysics>();
     add<modules::JavaFov>();
+    add<modules::JumpCircles>();
     add<modules::MotionBlur>();
     add<modules::NoDynamicFov>();
     add<modules::NoHurtCam>();
@@ -31,6 +32,7 @@ void ModuleManager::registerAll() {
     add<modules::SelfNameTag>();
     add<modules::Skybox>();
     add<modules::SwingAnimations>();
+    add<modules::Trajectories>();
     add<modules::ViewModel>();
     add<modules::Zoom>();
 

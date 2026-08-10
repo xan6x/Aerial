@@ -139,6 +139,7 @@ inline constexpr uintptr_t Level_addParticle            = 0xBA1390;
 inline constexpr uintptr_t Level_playSound              = 0xBA0D70;
 inline constexpr uintptr_t Level_broadcastEntityEvent   = 0xBA3220;
 inline constexpr uintptr_t BlockSource_getEntities      = 0xB74EF0;
+inline constexpr uintptr_t BlockSource_getBlockID       = 0xB73250;  // (bs, u8* out, BlockPos*) writes id byte, 0=air
 
 inline constexpr uintptr_t MoveInputHandler_tick        = 0x443DC0;
 

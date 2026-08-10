@@ -9,6 +9,7 @@
 #include "Module/Modules/HurtColor.h"
 #include "Module/Modules/ItemPhysics.h"
 #include "Module/Modules/JavaFov.h"
+#include "Module/Modules/JumpCircles.h"
 #include "Module/Modules/MotionBlur.h"
 #include "Module/Modules/NoDynamicFov.h"
 #include "Module/Modules/NoHurtCam.h"
@@ -16,6 +17,7 @@
 #include "Module/Modules/SelfNameTag.h"
 #include "Module/Modules/Skybox.h"
 #include "Module/Modules/SwingAnimations.h"
+#include "Module/Modules/Trajectories.h"
 #include "Module/Modules/ViewModel.h"
 #include "Module/Modules/Zoom.h"
 

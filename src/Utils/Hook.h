@@ -44,6 +44,8 @@ namespace detail {
 
 bool createHook(void* target, void* detour, void** original);
 bool removeHook(void* target);
+bool enableHook(void* target);
+bool disableHook(void* target);
 }
 
 template <typename Fn>
@@ -89,6 +91,15 @@ public:
         m_original = nullptr;
         m_target = nullptr;
         return ok;
+    }
+
+    void setActive(bool on) {
+        if (!m_attached)
+            return;
+        if (on)
+            detail::enableHook(m_target);
+        else
+            detail::disableHook(m_target);
     }
 
     template <typename... Args>

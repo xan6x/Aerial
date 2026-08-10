@@ -27,6 +27,12 @@ private:
     BytePatch m_patch;
 
     BoolSetting* m_frontView;
+    BoolSetting* m_ignoreColour;
+    BoolSetting* m_useText;
+    ColourSetting* m_textColour;
+    BoolSetting* m_useBg;
+    ColourSetting* m_bgColour;
+    FloatSetting* m_scale;
 };
 
 }

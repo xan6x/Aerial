@@ -8,6 +8,7 @@
 #include "Hooks/FovHooks.h"
 #include "Hooks/HookRegistry.h"
 #include "SDK/Offsets.h"
+#include "Utils/Guard.h"
 #include "Utils/Hook.h"
 #include "Utils/Memory.h"
 
@@ -71,24 +72,18 @@ void applyTransform(float* top) {
 }
 
 void __fastcall onRender(void* self, char a2, float partialTicks) {
-    if (!g_on.load(std::memory_order_relaxed)) {
-        g_render.call(self, a2, partialTicks);
-        return;
-    }
-
-    float* top = topMatrix();
-    if (!top) {
-        g_render.call(self, a2, partialTicks);
-        return;
-    }
+    float* top = g_on.load(std::memory_order_relaxed) ? topMatrix() : nullptr;
 
     float saved[16];
-    std::memcpy(saved, top, sizeof(saved));
+    if (top) {
+        std::memcpy(saved, top, sizeof(saved));
+        applyTransform(top);
+    }
 
-    applyTransform(top);
-    g_render.call(self, a2, partialTicks);
+    guarded("item in hand", [&] { g_render.call(self, a2, partialTicks); });
 
-    std::memcpy(top, saved, sizeof(saved));
+    if (top)
+        std::memcpy(top, saved, sizeof(saved));
 }
 
 bool install() {

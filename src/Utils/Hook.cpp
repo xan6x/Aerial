@@ -94,5 +94,15 @@ bool removeHook(void* target) {
     return true;
 }
 
+bool enableHook(void* target) {
+    const MH_STATUS status = MH_EnableHook(target);
+    return status == MH_OK || status == MH_ERROR_ENABLED;
+}
+
+bool disableHook(void* target) {
+    const MH_STATUS status = MH_DisableHook(target);
+    return status == MH_OK || status == MH_ERROR_DISABLED || status == MH_ERROR_NOT_CREATED;
+}
+
 }
 }
