@@ -183,6 +183,9 @@ void __fastcall onMatrixScale(void* matrix, float x, float y, float z) {
 }
 
 void __fastcall onRenderText(void* self, void* entity, const void* text, float partialTicks) {
+    t_own = false;
+    t_aimAtCamera = false;
+
     const bool own = g_enabled.load(std::memory_order_relaxed) && entity &&
                      entity == sdk::Context::get().localPlayer;
 
@@ -214,19 +217,28 @@ bool install() {
     return true;
 }
 
-void setHotHooks(bool on) {
-    if (on) {
-        if (!g_fontDraw.attached())
-            g_fontDraw.attach("Font::drawCached", memory::rva(func::Font_drawCached), &onFontDraw);
-        if (!g_matrixScale.attached())
-            g_matrixScale.attach("Matrix::scale", memory::rva(func::Matrix_scale), &onMatrixScale);
-        if (!g_tessBegin.attached())
-            g_tessBegin.attach("Tessellator::begin", memory::rva(func::Tessellator_begin),
-                               &onTessBegin);
+void syncHotHooks(bool font, bool scale, bool bg) {
+    static bool lastFont = false, lastScale = false, lastBg = false;
+
+    if (font && !g_fontDraw.attached())
+        g_fontDraw.attach("Font::drawCached", memory::rva(func::Font_drawCached), &onFontDraw);
+    if (scale && !g_matrixScale.attached())
+        g_matrixScale.attach("Matrix::scale", memory::rva(func::Matrix_scale), &onMatrixScale);
+    if (bg && !g_tessBegin.attached())
+        g_tessBegin.attach("Tessellator::begin", memory::rva(func::Tessellator_begin), &onTessBegin);
+
+    if (font != lastFont) {
+        g_fontDraw.setActive(font);
+        lastFont = font;
     }
-    g_fontDraw.setActive(on);
-    g_matrixScale.setActive(on);
-    g_tessBegin.setActive(on);
+    if (scale != lastScale) {
+        g_matrixScale.setActive(scale);
+        lastScale = scale;
+    }
+    if (bg != lastBg) {
+        g_tessBegin.setActive(bg);
+        lastBg = bg;
+    }
 }
 
 const hooks::Installer g_installer{"SelfNameTag", &install};
@@ -249,11 +261,7 @@ SelfNameTag::SelfNameTag()
     listen<Render2DEvent>(&SelfNameTag::onRender);
 }
 
-std::string SelfNameTag::suffix() const {
-    if (!enabled())
-        return {};
-    return m_patch.applied() ? std::string{} : "unavailable";
-}
+std::string SelfNameTag::suffix() const { return {}; }
 
 void SelfNameTag::onRender(Render2DEvent& event) {
     (void)event;
@@ -273,23 +281,26 @@ void SelfNameTag::onRender(Render2DEvent& event) {
     g_bgA.store(m_bgColour->value.a, std::memory_order_relaxed);
 
     const float scale = m_scale->value;
-    g_scaleOn.store(scale < 0.999f || scale > 1.001f, std::memory_order_relaxed);
+    const bool scaleOn = scale < 0.999f || scale > 1.001f;
+    g_scaleOn.store(scaleOn, std::memory_order_relaxed);
     g_scale.store(scale, std::memory_order_relaxed);
-}
 
-void SelfNameTag::onEnable() {
-    if (!m_patch.apply()) {
-        LOG_ERROR("SelfNameTag", "the camera-target check could not be patched");
-        return;
+    const bool active = wanted();
+    if (active) {
+        if (!m_patch.applied())
+            m_patch.apply();
+    } else if (m_patch.applied()) {
+        m_patch.revert();
     }
 
-    g_enabled.store(true, std::memory_order_relaxed);
-    setHotHooks(true);
+    syncHotHooks(active && m_useText->value, active && scaleOn, active && m_useBg->value);
 }
+
+void SelfNameTag::onEnable() { g_enabled.store(true, std::memory_order_relaxed); }
 
 void SelfNameTag::onDisable() {
     g_enabled.store(false, std::memory_order_relaxed);
-    setHotHooks(false);
+    syncHotHooks(false, false, false);
     m_patch.revert();
 }
 
