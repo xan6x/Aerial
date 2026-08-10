@@ -35,13 +35,17 @@ Watermark::Watermark() : Module("Watermark", "Client logo in the corner", Catego
     m_colour = addColour("Colour", "Accent colour", Colour::rgb(0x6C8CFF));
     m_colour->onlyIf([this] { return !m_rainbow->value; });
 
+    m_posX = addFloat("PosX", "", 0.01f, -1.0f, 1.0f, 0.0f);
+    m_posY = addFloat("PosY", "", 0.012f, -1.0f, 1.0f, 0.0f);
+    m_posX->onlyIf([] { return false; });
+    m_posY->onlyIf([] { return false; });
+    m_drag.bind(m_posX, m_posY);
+
     listen<Render2DEvent>(&Watermark::onRender);
     setEnabled(true);
 }
 
 void Watermark::onRender(Render2DEvent& event) {
-    (void)event;
-
     const auto& theme = gui::Theme::get();
     const float s = DrawUtils::uiScale();
     const Colour accent = m_rainbow->value ? theme.rainbowAt(0) : m_colour->value;
@@ -57,9 +61,9 @@ void Watermark::onRender(Render2DEvent& event) {
 
     const float padding = 11.0f * s;
     const float height = 28.0f * s;
-    const Rect box{10.0f * s, 10.0f * s,
-                   10.0f * s + padding * 2.0f + labelWidth + detailWidth + 9.0f * s,
-                   10.0f * s + height};
+    const float width = padding * 2.0f + labelWidth + detailWidth + 9.0f * s;
+    const Vec2 anchor = m_drag.place({width, height}, event.screenSize);
+    const Rect box{anchor.x, anchor.y, anchor.x + width, anchor.y + height};
 
     if (m_style->is("Modern")) {
         DrawUtils::shadow(box, Colour::rgb(0x000000, 0.45f), 10.0f * s, 8.0f * s, {0.0f, 3.0f * s});

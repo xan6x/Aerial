@@ -42,6 +42,7 @@ void ModuleManager::registerAll() {
     add<modules::Keystrokes>();
     add<modules::Mousestrokes>();
     add<modules::CpsCounter>();
+    add<modules::PotCounter>();
 
     add<modules::Aliases>();
     add<modules::AutoSprint>();

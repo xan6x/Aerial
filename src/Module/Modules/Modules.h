@@ -26,6 +26,7 @@
 #include "Module/Modules/Keystrokes.h"
 #include "Module/Modules/Mousestrokes.h"
 #include "Module/Modules/Notifications.h"
+#include "Module/Modules/PotCounter.h"
 #include "Module/Modules/Watermark.h"
 
 #include "Module/Modules/Aliases.h"
