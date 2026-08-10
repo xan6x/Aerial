@@ -38,6 +38,12 @@ struct GeoVertex {
     float r, g, b, a;
 };
 
+struct TexVertex {
+    float x, y;
+    float u, v;
+    float r, g, b, a;
+};
+
 constexpr char kShader[] = R"(
 cbuffer Params : register(b0) {
     float4 uScreen;
@@ -114,6 +120,22 @@ GVSOut gvs_main(GVSIn i) {
 }
 
 float4 gps_main(GVSOut i) : SV_TARGET { return i.col; }
+
+struct TVSIn  { float2 pos : POSITION; float2 uv : TEXCOORD0; float4 col : COLOR; };
+struct TVSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; float4 col : COLOR; };
+
+TVSOut tvs_main(TVSIn i) {
+    TVSOut o;
+    o.pos = float4(i.pos / uScreen.xy * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
+    o.uv = i.uv;
+    o.col = i.col;
+    return o;
+}
+
+float4 tps_main(TVSOut i) : SV_TARGET {
+    float cov = tex.Sample(smp, i.uv).r;
+    return float4(i.col.rgb, i.col.a * cov);
+}
 )";
 
 struct Resources {
@@ -126,9 +148,15 @@ struct Resources {
     ID3D11PixelShader* geoPS = nullptr;
     ID3D11InputLayout* geoLayout = nullptr;
 
+    ID3D11VertexShader* textVS = nullptr;
+    ID3D11PixelShader* textPS = nullptr;
+    ID3D11InputLayout* textLayout = nullptr;
+
     ID3D11Buffer* cbuffer = nullptr;
     ID3D11Buffer* geoBuffer = nullptr;
     size_t geoCapacity = 0;
+    ID3D11Buffer* textBuffer = nullptr;
+    size_t textCapacity = 0;
 
     ID3D11BlendState* blend = nullptr;
     ID3D11SamplerState* sampler = nullptr;
@@ -138,15 +166,23 @@ struct Resources {
     ID3D11Texture2D* white = nullptr;
     ID3D11ShaderResourceView* whiteView = nullptr;
 
+    int pipeMode = 0;
+    ID3D11ShaderResourceView* boundView = nullptr;
+
     void releaseAll() {
         release(rectVS);
         release(rectPS);
         release(geoVS);
         release(geoPS);
         release(geoLayout);
+        release(textVS);
+        release(textPS);
+        release(textLayout);
         release(cbuffer);
         release(geoBuffer);
         geoCapacity = 0;
+        release(textBuffer);
+        textCapacity = 0;
         release(blend);
         release(sampler);
         release(rasteriser);
@@ -537,10 +573,14 @@ bool D3DRenderer::ensureResources(ID3D11Device* device) {
     ID3DBlob* rectPSBlob = nullptr;
     ID3DBlob* geoVSBlob = nullptr;
     ID3DBlob* geoPSBlob = nullptr;
+    ID3DBlob* textVSBlob = nullptr;
+    ID3DBlob* textPSBlob = nullptr;
     bool ok = compile("vs_main", "vs_4_0", &rectVSBlob) &&
               compile("ps_main", "ps_4_0", &rectPSBlob) &&
               compile("gvs_main", "vs_4_0", &geoVSBlob) &&
-              compile("gps_main", "ps_4_0", &geoPSBlob);
+              compile("gps_main", "ps_4_0", &geoPSBlob) &&
+              compile("tvs_main", "vs_4_0", &textVSBlob) &&
+              compile("tps_main", "ps_4_0", &textPSBlob);
 
     if (ok)
         ok = SUCCEEDED(device->CreateVertexShader(rectVSBlob->GetBufferPointer(),
@@ -550,7 +590,11 @@ bool D3DRenderer::ensureResources(ID3D11Device* device) {
              SUCCEEDED(device->CreateVertexShader(geoVSBlob->GetBufferPointer(),
                                                   geoVSBlob->GetBufferSize(), nullptr, &g_r.geoVS)) &&
              SUCCEEDED(device->CreatePixelShader(geoPSBlob->GetBufferPointer(),
-                                                 geoPSBlob->GetBufferSize(), nullptr, &g_r.geoPS));
+                                                 geoPSBlob->GetBufferSize(), nullptr, &g_r.geoPS)) &&
+             SUCCEEDED(device->CreateVertexShader(textVSBlob->GetBufferPointer(),
+                                                  textVSBlob->GetBufferSize(), nullptr, &g_r.textVS)) &&
+             SUCCEEDED(device->CreatePixelShader(textPSBlob->GetBufferPointer(),
+                                                 textPSBlob->GetBufferSize(), nullptr, &g_r.textPS));
 
     if (ok) {
         const D3D11_INPUT_ELEMENT_DESC layout[] = {
@@ -560,10 +604,21 @@ bool D3DRenderer::ensureResources(ID3D11Device* device) {
                                                  geoVSBlob->GetBufferSize(), &g_r.geoLayout));
     }
 
+    if (ok) {
+        const D3D11_INPUT_ELEMENT_DESC layout[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D11_INPUT_PER_VERTEX_DATA, 0}};
+        ok = SUCCEEDED(device->CreateInputLayout(layout, 3, textVSBlob->GetBufferPointer(),
+                                                 textVSBlob->GetBufferSize(), &g_r.textLayout));
+    }
+
     release(rectVSBlob);
     release(rectPSBlob);
     release(geoVSBlob);
     release(geoPSBlob);
+    release(textVSBlob);
+    release(textPSBlob);
     if (!ok) {
         releaseDeviceResources();
         return false;
@@ -651,6 +706,8 @@ bool D3DRenderer::beginFrame(ID3D11Device* device, ID3D11DeviceContext* context,
     m_width = width;
     m_height = height;
     g_scissorStack.clear();
+    g_r.pipeMode = 0;
+    g_r.boundView = nullptr;
 
     saveState(context);
 
@@ -712,14 +769,24 @@ void drawRectPrim(const Rect& area, const Colour& a, const Colour& b, float radi
 
     auto* c = g_r.context;
     ID3D11ShaderResourceView* view = srv ? srv : g_r.whiteView;
-    c->VSSetShader(g_r.rectVS, nullptr, 0);
-    c->PSSetShader(g_r.rectPS, nullptr, 0);
-    c->PSSetShaderResources(0, 1, &view);
-    c->IASetInputLayout(nullptr);
-    c->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    ID3D11Buffer* noBuffer = nullptr;
-    UINT stride = 0, offset = 0;
-    c->IASetVertexBuffers(0, 1, &noBuffer, &stride, &offset);
+
+    if (g_r.pipeMode != 1) {
+        c->VSSetShader(g_r.rectVS, nullptr, 0);
+        c->PSSetShader(g_r.rectPS, nullptr, 0);
+        c->IASetInputLayout(nullptr);
+        c->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+        ID3D11Buffer* noBuffer = nullptr;
+        UINT stride = 0, offset = 0;
+        c->IASetVertexBuffers(0, 1, &noBuffer, &stride, &offset);
+        g_r.pipeMode = 1;
+        g_r.boundView = nullptr;
+    }
+
+    if (view != g_r.boundView) {
+        c->PSSetShaderResources(0, 1, &view);
+        g_r.boundView = view;
+    }
+
     c->Draw(4, 0);
 }
 
@@ -790,10 +857,14 @@ void D3DRenderer::polygon(const Vec2* points, size_t count, const Colour& colour
 
     UINT stride = sizeof(GeoVertex);
     UINT offset = 0;
-    c->VSSetShader(g_r.geoVS, nullptr, 0);
-    c->PSSetShader(g_r.geoPS, nullptr, 0);
-    c->IASetInputLayout(g_r.geoLayout);
-    c->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    if (g_r.pipeMode != 2) {
+        c->VSSetShader(g_r.geoVS, nullptr, 0);
+        c->PSSetShader(g_r.geoPS, nullptr, 0);
+        c->IASetInputLayout(g_r.geoLayout);
+        c->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        g_r.pipeMode = 2;
+        g_r.boundView = nullptr;
+    }
     c->IASetVertexBuffers(0, 1, &g_r.geoBuffer, &stride, &offset);
     c->Draw(static_cast<UINT>(vertices.size()), 0);
 }
@@ -806,20 +877,74 @@ void D3DRenderer::text(const std::string& value, float x, float y, const Colour&
     const float baseline = std::round(y + g_atlas.ascent(weight, size));
     float penX = x;
 
+    static std::vector<TexVertex> verts;
+    verts.clear();
+    verts.reserve(value.size() * 6);
+
     for (size_t i = 0; i < value.size();) {
         const uint32_t cp = nextCodepoint(value, i);
         const Glyph* g = g_atlas.glyph(g_r.device, g_r.context, cp, size, weight);
         if (!g)
             continue;
         if (!g->blank && g->w > 0.0f) {
-            const float gx = std::round(penX + g->bearingX);
-            const float gy = baseline + g->bearingY;
-            const Rect dest{gx, gy, gx + g->w, gy + g->h};
-            drawRectPrim(dest, colour, Colour{g->u0, g->v0, g->u1, g->v1}, 0.0f, 0.0f, 2.0f, 0.0f,
-                         g_atlas.view);
+            const float x0 = std::round(penX + g->bearingX);
+            const float y0 = baseline + g->bearingY;
+            const float x1 = x0 + g->w;
+            const float y1 = y0 + g->h;
+            const TexVertex tl{x0, y0, g->u0, g->v0, colour.r, colour.g, colour.b, colour.a};
+            const TexVertex tr{x1, y0, g->u1, g->v0, colour.r, colour.g, colour.b, colour.a};
+            const TexVertex bl{x0, y1, g->u0, g->v1, colour.r, colour.g, colour.b, colour.a};
+            const TexVertex br{x1, y1, g->u1, g->v1, colour.r, colour.g, colour.b, colour.a};
+            verts.push_back(tl);
+            verts.push_back(tr);
+            verts.push_back(bl);
+            verts.push_back(bl);
+            verts.push_back(tr);
+            verts.push_back(br);
         }
         penX += g->advance;
     }
+
+    if (verts.empty())
+        return;
+
+    const size_t bytes = verts.size() * sizeof(TexVertex);
+    if (g_r.textCapacity < verts.size()) {
+        release(g_r.textBuffer);
+        D3D11_BUFFER_DESC desc{};
+        desc.ByteWidth = static_cast<UINT>(bytes);
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        if (FAILED(g_r.device->CreateBuffer(&desc, nullptr, &g_r.textBuffer)))
+            return;
+        g_r.textCapacity = verts.size();
+    }
+
+    auto* c = g_r.context;
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(c->Map(g_r.textBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+        return;
+    std::memcpy(mapped.pData, verts.data(), bytes);
+    c->Unmap(g_r.textBuffer, 0);
+
+    Params p{};
+    p.screen[0] = m_width;
+    p.screen[1] = m_height;
+    writeParams(p);
+
+    UINT stride = sizeof(TexVertex);
+    UINT offset = 0;
+    c->VSSetShader(g_r.textVS, nullptr, 0);
+    c->PSSetShader(g_r.textPS, nullptr, 0);
+    c->PSSetShaderResources(0, 1, &g_atlas.view);
+    c->IASetInputLayout(g_r.textLayout);
+    c->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    c->IASetVertexBuffers(0, 1, &g_r.textBuffer, &stride, &offset);
+    c->Draw(static_cast<UINT>(verts.size()), 0);
+
+    g_r.pipeMode = 0;
+    g_r.boundView = nullptr;
 }
 
 float D3DRenderer::measure(const std::string& value, float size, Weight weight) {

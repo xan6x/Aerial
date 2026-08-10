@@ -1,10 +1,14 @@
 #include <Windows.h>
 
+#include <atomic>
+#include <cstdint>
+
 #include "Aerial.h"
 #include "Hooks/Hooks.h"
 #include "Input/InputManager.h"
 #include "Render/Overlay.h"
 #include "Render/DrawUtils.h"
+#include "Security/Scanner.h"
 #include "Utils/Logger.h"
 #include "Utils/Platform.h"
 
@@ -92,6 +96,88 @@ DWORD WINAPI startupThread(LPVOID) {
     ExitThread(0);
 }
 
+std::atomic<uint64_t> g_watchdogBeat{0};
+
+DWORD WINAPI scannerThread(LPVOID);
+DWORD WINAPI watchdogThread(LPVOID);
+
+void takeSelfRef(HMODULE* out) {
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                       reinterpret_cast<LPCWSTR>(&takeSelfRef), out);
+}
+
+DWORD WINAPI scannerThread(LPVOID) {
+    HMODULE selfRef = nullptr;
+    takeSelfRef(&selfRef);
+
+    uint64_t lastWatch = 0;
+    int watchStale = 0;
+    while (!aerial::Aerial::get().shutdownRequested()) {
+        if (GetAsyncKeyState(VK_END) & 0x8000)
+            break;
+
+        if (aerial::Aerial::get().running()) {
+            aerial::security::Scanner::get().scan();
+
+            const uint64_t beat = g_watchdogBeat.load(std::memory_order_relaxed);
+            if (beat == lastWatch) {
+                if (++watchStale >= 4 && !aerial::Aerial::get().shutdownRequested()) {
+                    watchStale = 0;
+                    const HANDLE h = CreateThread(nullptr, 0, watchdogThread, nullptr, 0, nullptr);
+                    if (h)
+                        CloseHandle(h);
+                }
+            } else {
+                lastWatch = beat;
+                watchStale = 0;
+            }
+        }
+        Sleep(2000);
+    }
+
+    if (selfRef)
+        FreeLibraryAndExitThread(selfRef, 0);
+    ExitThread(0);
+}
+
+DWORD WINAPI watchdogThread(LPVOID) {
+    HMODULE selfRef = nullptr;
+    takeSelfRef(&selfRef);
+
+    uint64_t lastScan = 0;
+    int scanStale = 0;
+    while (!aerial::Aerial::get().shutdownRequested()) {
+        if (GetAsyncKeyState(VK_END) & 0x8000)
+            break;
+
+        g_watchdogBeat.fetch_add(1, std::memory_order_relaxed);
+
+        if (aerial::Aerial::get().running()) {
+            const uint64_t beat = aerial::security::Scanner::get().heartbeat();
+            if (beat == lastScan) {
+                if (++scanStale >= 6) {
+                    scanStale = 0;
+                    aerial::security::Scanner::get().scan();
+                    if (!aerial::Aerial::get().shutdownRequested()) {
+                        const HANDLE h =
+                            CreateThread(nullptr, 0, scannerThread, nullptr, 0, nullptr);
+                        if (h)
+                            CloseHandle(h);
+                    }
+                }
+            } else {
+                lastScan = beat;
+                scanStale = 0;
+            }
+        }
+        Sleep(2000);
+    }
+
+    if (selfRef)
+        FreeLibraryAndExitThread(selfRef, 0);
+    ExitThread(0);
+}
+
 }
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
@@ -103,6 +189,14 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         const HANDLE thread = CreateThread(nullptr, 0, startupThread, nullptr, 0, nullptr);
         if (thread)
             CloseHandle(thread);
+
+        const HANDLE scanner = CreateThread(nullptr, 0, scannerThread, nullptr, 0, nullptr);
+        if (scanner)
+            CloseHandle(scanner);
+
+        const HANDLE watchdog = CreateThread(nullptr, 0, watchdogThread, nullptr, 0, nullptr);
+        if (watchdog)
+            CloseHandle(watchdog);
         break;
     }
     case DLL_PROCESS_DETACH:

@@ -60,6 +60,17 @@ void HookManager::unregisterDetour(DetourBase* detour) {
     m_detours.erase(std::remove(m_detours.begin(), m_detours.end(), detour), m_detours.end());
 }
 
+std::vector<uintptr_t> HookManager::hookedTargets() const {
+    std::vector<uintptr_t> out;
+    out.reserve(m_detours.size());
+    for (const DetourBase* detour : m_detours) {
+        const uintptr_t target = detour->targetAddress();
+        if (target)
+            out.push_back(target);
+    }
+    return out;
+}
+
 namespace detail {
 
 bool createHook(void* target, void* detour, void** original) {

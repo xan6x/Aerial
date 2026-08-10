@@ -13,6 +13,7 @@
 #include "Render/DrawUtils.h"
 #include "Render/MotionBlur.h"
 #include "SDK/Context.h"
+#include "Security/Scanner.h"
 #include "Utils/CrashLog.h"
 #include "Utils/Hook.h"
 #include "Utils/Logger.h"
@@ -114,6 +115,8 @@ void Aerial::startup(void* moduleHandle) {
     }
 
     Config::get().loadActive();
+
+    security::Scanner::get().init(m_module);
 
     platform::holdExecution();
 

@@ -14,6 +14,7 @@ public:
     virtual ~DetourBase() = default;
     virtual bool detach() = 0;
     virtual const std::string& name() const = 0;
+    virtual uintptr_t targetAddress() const = 0;
 };
 
 class HookManager {
@@ -27,6 +28,8 @@ public:
 
     void registerDetour(DetourBase* detour);
     void unregisterDetour(DetourBase* detour);
+
+    std::vector<uintptr_t> hookedTargets() const;
 
     bool initialised() const { return m_initialised; }
 
@@ -96,6 +99,7 @@ public:
     Fn original() const { return m_original; }
     bool attached() const { return m_attached; }
     const std::string& name() const override { return m_name; }
+    uintptr_t targetAddress() const override { return reinterpret_cast<uintptr_t>(m_target); }
 
 private:
     std::string m_name;
