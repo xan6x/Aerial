@@ -38,6 +38,12 @@ ArrayList::ArrayList() : Module("ArrayList", "Lists enabled modules", Category::
     m_background = addBool("Background", "Draw a panel behind the rows", true);
     m_speed = addFloat("Animation", "How quickly rows settle", 0.22f, 0.05f, 1.0f, 0.01f);
 
+    m_posX = addFloat("PosX", "", -1.0f, -1.0f, 1.0f, 0.0f);
+    m_posY = addFloat("PosY", "", -1.0f, -1.0f, 1.0f, 0.0f);
+    m_posX->onlyIf([] { return false; });
+    m_posY->onlyIf([] { return false; });
+    m_drag.bind(m_posX, m_posY);
+
     listen<Render2DEvent>(&ArrayList::onRender);
     setEnabled(true);
 }
@@ -69,7 +75,7 @@ void ArrayList::onRender(Render2DEvent& event) {
 
     const float rowHeight = kRowHeight * s;
     const float step = rowHeight + kRowGap * s;
-    float target = kMargin * s;
+    float target = 0.0f;
     int index = 0;
 
     for (Module* module : active) {
@@ -95,11 +101,33 @@ void ArrayList::onRender(Render2DEvent& event) {
             row.slide.set(0.0f);
     }
 
-    const float right = event.screenSize.x - kMargin * s;
+    float maxWidth = 0.0f;
+    for (auto& [module, row] : m_rows) {
+        if (!row.alive && row.slide.value() <= 0.01f)
+            continue;
+        const float w =
+            DrawUtils::textWidth(row.label, kTextSize * s, kWeight) + kPadding * 2.0f * s;
+        maxWidth = std::max(maxWidth, w);
+    }
+    const float blockHeight = std::max(target, rowHeight);
+
+    if (maxWidth <= 0.0f) {
+        std::erase_if(m_rows, [](const auto& entry) {
+            return !entry.second.alive && entry.second.slide.value() <= 0.001f;
+        });
+        return;
+    }
+
+    const Vec2 anchor = m_drag.place({maxWidth, blockHeight}, event.screenSize);
+    const float left = anchor.x;
+    const float right = anchor.x + maxWidth;
+    const bool rightSide = (anchor.x + maxWidth * 0.5f) >= event.screenSize.x * 0.5f;
+    const bool bottomSide = (anchor.y + blockHeight * 0.5f) >= event.screenSize.y * 0.5f;
 
     for (auto& [module, row] : m_rows) {
         const float slide = easeOut(row.slide.update(speed));
-        const float y = row.y.update(speed);
+        const float yRel = row.y.update(speed);
+        const float y = bottomSide ? anchor.y + blockHeight - rowHeight - yRel : anchor.y + yRel;
 
         if (slide <= 0.01f)
             continue;
@@ -108,7 +136,9 @@ void ArrayList::onRender(Render2DEvent& event) {
         const float rowWidth = width + kPadding * 2.0f * s;
 
         const float hidden = (1.0f - slide) * (rowWidth + kMargin * s);
-        const Rect area{right - rowWidth + hidden, y, right + hidden, y + rowHeight};
+        const Rect area = rightSide
+                              ? Rect{right - rowWidth + hidden, y, right + hidden, y + rowHeight}
+                              : Rect{left - hidden, y, left + rowWidth - hidden, y + rowHeight};
 
         const Colour colour = m_rainbow->value ? theme.rainbowAt(row.index, 14.0f) : theme.accent;
         const bool barAccent = !m_accent->is("Text");
@@ -121,15 +151,21 @@ void ArrayList::onRender(Render2DEvent& event) {
                                 Colour::rgb(0x0B0D12, 0.72f * slide), false, 5.0f * s);
         }
 
-        DrawUtils::fill({area.right - kBarWidth * s, area.top + 4.0f * s, area.right,
-                         area.bottom - 4.0f * s},
-                        (barAccent ? colour : theme.text).withAlpha(slide), kBarWidth * 0.5f * s);
+        const Rect bar = rightSide
+                             ? Rect{area.right - kBarWidth * s, area.top + 4.0f * s, area.right,
+                                    area.bottom - 4.0f * s}
+                             : Rect{area.left, area.top + 4.0f * s, area.left + kBarWidth * s,
+                                    area.bottom - 4.0f * s};
+        DrawUtils::fill(bar, (barAccent ? colour : theme.text).withAlpha(slide), kBarWidth * 0.5f * s);
 
-        DrawUtils::text(row.label,
-                        {area.right - kBarWidth * s - 7.0f * s,
-                         y + (rowHeight - DrawUtils::textHeight(kTextSize * s)) * 0.5f},
-                        (textAccent ? colour : theme.textActive).withAlpha(slide), kTextSize * s,
-                        kWeight, DrawUtils::Align::Right);
+        const float textY = y + (rowHeight - DrawUtils::textHeight(kTextSize * s)) * 0.5f;
+        const Colour textColour = (textAccent ? colour : theme.textActive).withAlpha(slide);
+        if (rightSide)
+            DrawUtils::text(row.label, {area.right - kBarWidth * s - 7.0f * s, textY}, textColour,
+                            kTextSize * s, kWeight, DrawUtils::Align::Right);
+        else
+            DrawUtils::text(row.label, {area.left + kBarWidth * s + 7.0f * s, textY}, textColour,
+                            kTextSize * s, kWeight, DrawUtils::Align::Left);
     }
 
     std::erase_if(m_rows, [](const auto& entry) {

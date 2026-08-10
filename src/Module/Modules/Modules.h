@@ -20,6 +20,9 @@
 #include "Module/Modules/Zoom.h"
 
 #include "Module/Modules/ArrayList.h"
+#include "Module/Modules/CpsCounter.h"
+#include "Module/Modules/Keystrokes.h"
+#include "Module/Modules/Mousestrokes.h"
 #include "Module/Modules/Notifications.h"
 #include "Module/Modules/Watermark.h"
 

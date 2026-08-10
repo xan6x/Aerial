@@ -37,6 +37,9 @@ void ModuleManager::registerAll() {
     add<modules::ArrayList>();
     add<modules::Notifications>();
     add<modules::Watermark>();
+    add<modules::Keystrokes>();
+    add<modules::Mousestrokes>();
+    add<modules::CpsCounter>();
 
     add<modules::Aliases>();
     add<modules::AutoSprint>();

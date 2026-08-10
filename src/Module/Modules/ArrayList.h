@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "GUI/HudDrag.h"
 #include "GUI/Theme.h"
 #include "Module/Module.h"
 
@@ -38,6 +39,10 @@ private:
     BoolSetting* m_background;
     FloatSetting* m_speed;
     EnumSetting* m_accent;
+
+    FloatSetting* m_posX;
+    FloatSetting* m_posY;
+    hud::Draggable m_drag;
 };
 
 }
