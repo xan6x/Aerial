@@ -3,9 +3,11 @@
 #include <intrin.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstring>
 
 #include "Event/Events.h"
+#include "Module/Modules/FreeLook.h"
 #include "Hooks/HookRegistry.h"
 #include "SDK/Context.h"
 #include "SDK/Offsets.h"
@@ -57,18 +59,36 @@ void aimAtCamera(const void* entity) {
     const auto* position =
         reinterpret_cast<const float*>(static_cast<const uint8_t*>(entity) + field::entity::pos);
 
-    const auto* camera = reinterpret_cast<const float*>(memory::rva(func::g_cameraPos));
-    if (!memory::isReadable(camera, sizeof(float) * 3))
-        return;
+    float cam[3];
 
-    const float dx = camera[0] - position[0];
-    const float dz = camera[2] - position[2];
-    const float gap = dx * dx + dz * dz;
+    if (freelook::active()) {
+        const float yaw = freelook::cameraYaw() * kDeg2Rad;
+        const float pitch = freelook::cameraPitch() * kDeg2Rad;
+        const float cp = std::cos(pitch);
+        const float fx = -std::sin(yaw) * cp;
+        const float fy = -std::sin(pitch);
+        const float fz = std::cos(yaw) * cp;
 
-    if (gap < kMinCameraGap || gap > kMaxCameraGap)
-        return;
+        const float sign = perspective() == kThirdPersonFront ? 1.0f : -1.0f;
+        constexpr float kDist = 20.0f;
+        cam[0] = position[0] + fx * sign * kDist;
+        cam[1] = position[1] + 1.62f + fy * sign * kDist;
+        cam[2] = position[2] + fz * sign * kDist;
+    } else {
+        const auto* camera = reinterpret_cast<const float*>(memory::rva(func::g_cameraPos));
+        if (!memory::isReadable(camera, sizeof(float) * 3))
+            return;
 
-    std::memcpy(t_camera, camera, sizeof(t_camera));
+        const float dx = camera[0] - position[0];
+        const float dz = camera[2] - position[2];
+        const float gap = dx * dx + dz * dz;
+        if (gap < kMinCameraGap || gap > kMaxCameraGap)
+            return;
+
+        std::memcpy(cam, camera, sizeof(cam));
+    }
+
+    std::memcpy(t_camera, cam, sizeof(t_camera));
     t_aimAtCamera = true;
 }
 

@@ -10,6 +10,12 @@ struct Render2DEvent;
 
 namespace aerial::modules {
 
+namespace freelook {
+bool active();
+float cameraYaw();
+float cameraPitch();
+}
+
 class FreeLook final : public Module {
 public:
     FreeLook();

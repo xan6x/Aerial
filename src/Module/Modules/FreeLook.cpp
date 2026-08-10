@@ -96,6 +96,16 @@ bool install() {
 
 const hooks::Installer g_installer{"FreeLook", &install};
 
+}
+
+namespace freelook {
+bool active() { return g_active.load(std::memory_order_relaxed); }
+float cameraYaw() { return g_camYaw.load(std::memory_order_relaxed); }
+float cameraPitch() { return g_camPitch.load(std::memory_order_relaxed); }
+}
+
+namespace {
+
 void* gameOptions() {
     auto& ctx = sdk::Context::get();
     if (!ctx.client)
