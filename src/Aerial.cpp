@@ -7,7 +7,6 @@
 #include "Config/Config.h"
 #include "GUI/ClickGui.h"
 #include "Hooks/Hooks.h"
-#include "Hooks/PingLowest.h"
 #include "Input/InputManager.h"
 #include "Module/ModuleManager.h"
 #include "Render/Overlay.h"
@@ -120,7 +119,6 @@ void Aerial::startup(void* moduleHandle) {
     security::Scanner::get().init(m_module);
 
     platform::holdExecution();
-    hooks::applyLowestPing();
 
     m_running = true;
     LOG_INFO("Aerial", "ready - press Insert for the menu, End to unload");
@@ -151,7 +149,6 @@ void Aerial::shutdown() {
 
     LOG_DEBUG("Aerial", "teardown: modules");
     platform::releaseExecution();
-    hooks::revertLowestPing();
     platform::detachFromGameInput();
     ModuleManager::get().shutdown();
     sdk::Context::get().reset();

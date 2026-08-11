@@ -93,7 +93,6 @@ inline constexpr uintptr_t Player_releaseUsingItem      = 0xA44180;
 inline constexpr uintptr_t Player_completeUsingItem     = 0xA44210;
 inline constexpr uintptr_t Player_getCarriedItem        = 0xA4A280;
 inline constexpr uintptr_t Player_jumpFromGround        = 0xA44940;
-inline constexpr uintptr_t RakNetNetworkPeer_pingDispByte = 0x79181B;  // disp low byte of call [rbx+0x150] (GetLastPing) in RakNetNetworkPeer::update; 0x50->0x58 = GetLowestPing
 inline constexpr uintptr_t Player_startGliding          = 0xA4CE40;
 inline constexpr uintptr_t Player_stopGliding           = 0xA4CEF0;
 inline constexpr uintptr_t Player_canDestroy            = 0xA45810;
