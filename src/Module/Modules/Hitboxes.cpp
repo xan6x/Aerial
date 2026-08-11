@@ -68,16 +68,25 @@ void Hitboxes::onRender(Render2DEvent& event) {
             size.z > 4.0f)
             continue;
 
-        const Vec3 offset = (player->pos() - player->posOld()) * (partial - 1.0f);
-        if (offset.lengthSquared() < 64.0f) {
-            box.min += offset;
-            box.max += offset;
+        const Vec3 shift = player->renderPos(partial) - player->pos();
+        if (shift.lengthSquared() < 64.0f) {
+            box.min += shift;
+            box.max += shift;
         }
 
         if (expand > 0.0f) {
             box.min -= Vec3{expand, expand, expand};
             box.max += Vec3{expand, expand, expand};
         }
+
+        bool anyVisible = false;
+        for (int i = 0; i < 8 && !anyVisible; ++i) {
+            const Vec3 corner{(i & 1) ? box.max.x : box.min.x, (i & 2) ? box.max.y : box.min.y,
+                              (i & 4) ? box.max.z : box.min.z};
+            anyVisible = cam.isVisible(corner, 1.3f);
+        }
+        if (!anyVisible)
+            continue;
 
         render::drawBox3D(cam, box, colour, thickness);
 

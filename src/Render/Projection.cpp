@@ -51,6 +51,11 @@ float viewDepth(const Camera& cam, const Vec3& world) {
     return (world - cam.pos).dot(cam.forward);
 }
 
+int viewPerspective() {
+    using Get = int(__fastcall*)(void*);
+    return reinterpret_cast<Get>(memory::rva(func::Options_getPlayerViewPerspective))(nullptr);
+}
+
 bool offScreen(const Vec2& a, const Vec2& b, const Vec2& screen) {
     constexpr float margin = 8.0f;
     if (a.x < -margin && b.x < -margin) return true;
@@ -75,7 +80,12 @@ bool Camera::build(const Vec2& s) {
     const Vec2 rot = lerpAngles(player->rotOld(), player->rot(), hooks::currentPartialTicks());
 
     forward = Vec3::fromAngles(rot);
-    right = cross(forward, Vec3{0.0f, 1.0f, 0.0f}).normalised();
+    const float yawRad = rot.y * kDeg2Rad;
+    right = Vec3{-std::cos(yawRad), 0.0f, -std::sin(yawRad)};
+    if (viewPerspective() == 2) {
+        forward = forward * -1.0f;
+        right = right * -1.0f;
+    }
     up = cross(right, forward).normalised();
 
     tanHalfFov = std::tan(hooks::currentFov() * kDeg2Rad * 0.5f);
@@ -97,6 +107,16 @@ bool Camera::projectSegment(Vec3 a, Vec3 b, Vec2& sa, Vec2& sb) const {
     sa = project(*this, a);
     sb = project(*this, b);
     return true;
+}
+
+bool Camera::isVisible(const Vec3& world, float ndcMargin) const {
+    const Vec3 d = world - pos;
+    const float vz = d.dot(forward);
+    if (vz < kNearPlane)
+        return false;
+    const float ndcX = d.dot(right) / (vz * tanHalfFov * aspect);
+    const float ndcY = d.dot(up) / (vz * tanHalfFov);
+    return std::fabs(ndcX) <= ndcMargin && std::fabs(ndcY) <= ndcMargin;
 }
 
 void drawLine3D(const Camera& cam, const Vec3& a, const Vec3& b, const Colour& colour,

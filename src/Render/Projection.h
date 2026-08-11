@@ -16,6 +16,8 @@ struct Camera {
     bool build(const Vec2& screen);
 
     bool projectSegment(Vec3 a, Vec3 b, Vec2& sa, Vec2& sb) const;
+
+    bool isVisible(const Vec3& world, float ndcMargin = 1.0f) const;
 };
 
 void drawLine3D(const Camera& cam, const Vec3& a, const Vec3& b, const Colour& colour,
