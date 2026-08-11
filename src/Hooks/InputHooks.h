@@ -6,6 +6,8 @@ namespace aerial::hooks {
 
 void clearMovementInput();
 
+void setMoveInputPostTick(void (*fn)(void* handler));
+
 void* containerController();
 
 void requestFreshSelect();

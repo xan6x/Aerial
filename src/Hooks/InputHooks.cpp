@@ -47,6 +47,8 @@ std::atomic<void*> g_hudController{nullptr};
 
 void* g_moveInputHandler = nullptr;
 
+std::atomic<void (*)(void*)> g_postMoveInput{nullptr};
+
 void* g_deferredGrab = nullptr;
 
 thread_local bool t_ourCursorCall = false;
@@ -76,6 +78,9 @@ void __fastcall onMoveInputTick(void* self, void* a2) {
     g_moveInputHandler = self;
 
     g_moveInputTick.call(self, a2);
+
+    if (auto* fn = g_postMoveInput.load(std::memory_order_relaxed))
+        fn(self);
 
     if (gui::ClickGui::get().isOpen())
         clearMovementState(self);
@@ -223,6 +228,10 @@ const Installer g_installer{"Input", &install};
 }
 
 void clearMovementInput() { clearMovementState(g_moveInputHandler); }
+
+void setMoveInputPostTick(void (*fn)(void* handler)) {
+    g_postMoveInput.store(fn, std::memory_order_relaxed);
+}
 
 void* containerController() {
     constexpr auto kFreshFor = std::chrono::milliseconds(500);

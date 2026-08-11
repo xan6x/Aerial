@@ -35,6 +35,7 @@
 #include "Module/Modules/FastRefill.h"
 #include "Module/Modules/ItemDelayFix.h"
 #include "Module/Modules/JavaHotkeys.h"
+#include "Module/Modules/KeybindFix.h"
 #include "Module/Modules/NoCamReset.h"
 #include "Module/Modules/QuickSlots.h"
 #include "Module/Modules/SensMultiplier.h"
